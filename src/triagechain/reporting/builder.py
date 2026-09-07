@@ -38,6 +38,7 @@ from triagechain.reporting.models import (
     YaraSummary,
 )
 from triagechain.reporting.renderer import render_html
+from triagechain.reporting.timeline import TimelineEvent, build_timeline
 from triagechain.router.models import RoutingManifest
 
 logger = logging.getLogger(__name__)
@@ -102,6 +103,7 @@ def build_report(config: TriageChainConfig) -> Report:
         capa=_capa_summary(config),
         correlated_artifacts=correlated_artifacts,
         engine_agreements=engine_agreements,
+        timeline=_timeline(config),
         custody_events=[
             CustodyEventSummary(
                 event_id=event.event_id,
@@ -137,6 +139,17 @@ def write_report(config: TriageChainConfig, report: Report) -> tuple[Path, Path,
         raise ReportingError(f"Rapor dosyalari yazilamadi: {json_path.parent} ({exc})") from exc
 
     return json_path, sha_path, html_path
+
+
+def _timeline(config: TriageChainConfig) -> list[TimelineEvent]:
+    """routing_manifest.json varsa MFTECmd/RECmd/EvtxECmd/PECmd ciktilarindan
+    birlestirilmis zaman cizelgesini dondurur; yoksa bos liste (hata degil) --
+    diger opsiyonel bolumlerle AYNI desen (bkz. reporting/timeline.py)."""
+    path = resolve_routing_manifest_path(config)
+    if not path.exists():
+        logger.info("[report] Yonlendirme manifesti yok (%s), zaman cizelgesi bos kalacak.", path)
+        return []
+    return build_timeline(RoutingManifest.from_json_file(path))
 
 
 def _routing_summary(config: TriageChainConfig) -> RoutingSummary | None:

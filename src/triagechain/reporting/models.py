@@ -16,6 +16,7 @@ from typing import Any, Optional
 
 from triagechain.detection.correlation import CorrelatedArtifact, EngineAgreement
 from triagechain.detection.models import Finding, YaraMatch
+from triagechain.reporting.timeline import TimelineEvent
 
 
 @dataclass
@@ -132,6 +133,10 @@ class Report:
     # amacli davranis" degil -- gercek, zararsiz bir .exe'de bile onlarca
     # capa kurali eslesir (bkz. aldigim_kararlar.md -> "capa entegrasyonu").
     capa: Optional[YaraSummary] = None
+    # MFTECmd/RECmd/EvtxECmd/PECmd ciktilarindan birlestirilmis, kronolojik
+    # zaman cizelgesi -- routing_manifest.json yoksa veya araclarin hicbiri
+    # CSV uretmemisse bos liste (bkz. reporting/timeline.py).
+    timeline: list[TimelineEvent] = field(default_factory=list)
     custody_events: list[CustodyEventSummary] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -213,6 +218,7 @@ class Report:
             engine_agreements=[
                 EngineAgreement(**raw) for raw in data.get("engine_agreements", [])
             ],
+            timeline=[TimelineEvent(**raw) for raw in data.get("timeline", [])],
             custody_events=[
                 CustodyEventSummary(
                     **{**raw, "timestamp_utc": datetime.fromisoformat(raw["timestamp_utc"])}

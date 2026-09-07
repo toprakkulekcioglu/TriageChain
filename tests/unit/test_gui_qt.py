@@ -377,6 +377,8 @@ def test_raporlar_sayfasi_gercek_veri(qt_app, config_path):
     assert "3 dosya" in window.report_field_collection.text()
     assert "2 bulgu" in window.report_field_detection.text()
     assert window.report_field_routing.text() == "Bu vaka için henüz çalıştırılmadı"
+    # _write_fake_case route calistirmiyor -- zaman cizelgesi de bos kalmali.
+    assert "Henüz oluşturulmadı" in window.report_field_timeline.text()
 
     # Yonetici Raporu sekmesi: _write_fake_case TUM bulgulari "critical"
     # yazdigi icin risk seviyesi Yuksek olmali (bkz. reporting/executive.py).

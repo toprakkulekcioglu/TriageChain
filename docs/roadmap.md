@@ -214,23 +214,39 @@
   GUI'ye "capa Tara" butonu ve Bulgular sayfasına capa yetenek tablosu
   eklendi. Gerekçe ve detaylar `aldigim_kararlar.md`'de. 18 yeni test
   (toplam 175).
+- **Birleşik zaman çizelgesi** — Plaso'nun kurulamamasının (aşağıdaki
+  "Daha sonra" bölümüne bkz.) YERİNE, TriageChain'in ZATEN ürettiği
+  MFTECmd/RECmd/EvtxECmd/PECmd CSV çıktılarını okuyup TEK bir kronolojik
+  listede birleştiren yeni bir katman (`reporting/timeline.py`) eklendi —
+  HİÇBİR yeni dış araç/bağımlılık gerektirmiyor. Dört gerçek EZ Tools
+  ikilisi (2026.5.0, net9) gerçek örnek verilere ($MFT, NTUSER.DAT/SAM
+  registry kovanları, UACME_59_Sysmon.evtx, bir NOTEPAD.EXE prefetch
+  dosyası) karşı çalıştırılıp CSV şemaları doğrulandı. `triagechain
+  report`'a (`Report.timeline`, HTML "Zaman çizelgesi" bölümü) ve GUI'nin
+  Raporlar sayfasına işlendi. **Not:** Plaso'nun ~600 ayrıştırıcısının
+  (tarayıcı geçmişi, disk imajı biçimleri vb.) tam kapsamının YERİNE
+  GEÇMEZ — sadece TriageChain'in zaten topladığı/ayrıştırdığı dört
+  kaynağı birleştirir. 8 yeni test (toplam 183).
 
 ## Daha sonra, öncelik sırası netleşmedi
 
 Kullanıcının orijinal proje planındaki sıralamayla:
 
-- **Plaso / log2timeline** — tüm parser çıktılarını birleştiren süper zaman
-  çizelgesi. **BİLİNÇLİ OLARAK ERTELENDİ** (kullanıcı onayıyla, "ileride
-  yapılacak"): `pip install plaso` bu geliştirme ortamında GERÇEKTEN
-  denendi ve başarısız oldu — Plaso'nun native bağımlılıkları (libewf/
-  libfsapfs/libfvde gibi libyal kütüphaneleri) Windows'ta bir C++
-  derleyicisi (Visual C++ Build Tools) gerektiriyor, bu makinede yok.
-  Önceki dört entegrasyonun (Chainsaw/YARA/capa) hepsinde ısrarla yapılan
-  "gerçek ikiliye karşı doğrula" adımı burada atlanmak zorunda kalacaktı;
-  bu riski kullanıcıya açıkça sunup onun kararıyla ertelendi. Kullanıcı
-  gerçek bir kurulumla (VC++ Build Tools, WSL ya da Docker) test
-  edebildiğinde ayrı bir oturumda ele alınmalı — bkz. `aldigim_
-  kararlar.md`.
+- **Plaso / log2timeline (kendisi)** — tüm parser çıktılarını birleştiren
+  ~600 ayrıştırıcılı GERÇEK süper zaman çizelgesi aracı. **BİLİNÇLİ OLARAK
+  ERTELENDİ** (kullanıcı onayıyla, "ileride yapılacak"): `pip install
+  plaso` bu geliştirme ortamında GERÇEKTEN denendi ve başarısız oldu —
+  Plaso'nun native bağımlılıkları (libewf/libfsapfs/libfvde gibi libyal
+  kütüphaneleri) Windows'ta bir C++ derleyicisi (Visual C++ Build Tools)
+  gerektiriyor, bu makinede yok. Önceki dört entegrasyonun (Chainsaw/YARA/
+  capa) hepsinde ısrarla yapılan "gerçek ikiliye karşı doğrula" adımı
+  burada atlanmak zorunda kalacaktı; bu riski kullanıcıya açıkça sunup
+  onun kararıyla ertelendi. Yukarıdaki "Birleşik zaman çizelgesi"
+  TriageChain'in KENDİ dört aracının kapsamını karşılıyor ama Plaso'nun
+  genişliğinin (disk imajı biçimleri, tarayıcı/uygulama artefaktları vb.)
+  yerini TUTMUYOR. Kullanıcı gerçek bir kurulumla (VC++ Build Tools, WSL
+  ya da Docker) test edebildiğinde ayrı bir oturumda ele alınmalı — bkz.
+  `aldigim_kararlar.md`.
 - **Volatility 3** — bellek (RAM) imajı analizi (şu an kapsam dışı).
 - **Timesketch / ELK** — web tabanlı, çok kullanıcılı, interaktif zaman
   çizelgesi görselleştirme.

@@ -1409,6 +1409,7 @@ class TriageChainWindow(QMainWindow):
         self.report_field_collection = self._stat_row("Toplama")
         self.report_field_routing = self._stat_row("Yönlendirme")
         self.report_field_detection = self._stat_row("Tarama")
+        self.report_field_timeline = self._stat_row("Zaman çizelgesi")
         self.report_field_location = self._stat_row("Dosya konumu")
         expert_layout.addWidget(panel)
         expert_layout.addStretch()
@@ -1490,6 +1491,10 @@ class TriageChainWindow(QMainWindow):
             )
         else:
             self.report_field_detection.setText("Bu vaka için henüz çalıştırılmadı")
+        if report.timeline:
+            self.report_field_timeline.setText(f"{len(report.timeline)} olay (rapor HTML'inde)")
+        else:
+            self.report_field_timeline.setText("Henüz oluşturulmadı (route çalışmamış olabilir)")
         self.report_field_location.setText(snap.report_path_note)
 
         cs = report.chain_status

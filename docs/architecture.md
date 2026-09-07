@@ -353,7 +353,44 @@ reporting/builder.py   → build_report(config) -> Report, write_report(config, 
 reporting/renderer.py  → render_html(report) -> str (Yönetici + Uzman sekmeleri, saf CSS)
 reporting/executive.py → build_executive_summary(report) -> ExecutiveSummary (teknik
                          olmayan, deterministik risk seviyesi -- Yönetici Raporu sekmesi)
+reporting/timeline.py  → build_timeline(routing) -> list[TimelineEvent] (birlesik
+                         zaman cizelgesi, asagida ayrica anlatiliyor)
 ```
+
+### Birleşik zaman çizelgesi (Plaso'nun kurulamamasına karşı, dış bağımlılıksız alternatif)
+
+Plaso/log2timeline (roadmap'in "süper zaman çizelgesi" hedefi) bu makinede
+gerçekten denenip C++ derleme zinciri eksikliğinden kurulamadı (bkz.
+`roadmap.md` → "Daha sonra"). Bunun YERİNE `reporting/timeline.py`,
+router'ın **zaten çalıştırdığı** dört EZ Tools'un (MFTECmd/RECmd/EvtxECmd/
+PECmd) CSV çıktılarını okuyup tek bir kronolojik listede birleştirir —
+hiçbir yeni dış araç/subprocess çağrısı yok, salt-okunur bir CSV
+ayrıştırma katmanı (reporting/'in diğer modülleriyle AYNI ilke: dış
+program çalıştırmaz, custody'ye yazmaz).
+
+Dört aracın CSV şeması, gerçek 2026.5.0 (net9) ikilileri gerçek örnek
+verilere (bir `$MFT`, `NTUSER.DAT`/`SAM` registry kovanları, gerçek bir
+`.evtx`, gerçek bir prefetch dosyası) karşı çalıştırılarak doğrulandı
+(bkz. `aldigim_kararlar.md`). Önemli mimari noktalar:
+
+- Dosyalar **glob ile** bulunur (`*_Output.csv`), sabit bir adla DEĞİL —
+  her arac kendi zaman-damgalı varsayılan dosya adını kullanıyor.
+- MFTECmd icin MACB (Modified/Accessed/Changed/Born) deseni uygulanır:
+  dört $STANDARD_INFORMATION zaman damgasından her DOLU olan AYRI bir
+  olay olur (Plaso'nun kendi super-zaman-cizelgesi yaklaşımıyla aynı).
+- PECmd'nin kendiliğinden ürettiği `*_Output_Timeline.csv` (sade
+  `RunTime,ExecutableName`) DOĞRUDAN okunur, ana CSV'yi ayrıştırmaya
+  gerek yok.
+- RECmd'nin CSV'si DEĞER satırı başınadır (bir anahtarın onlarca değeri
+  aynı `LastWriteTimestamp`'i taşır) — `(KeyPath, LastWriteTimestamp)`
+  çiftine göre TEKİLLEŞTİRİLİR, aksi halde zaman çizelgesi neredeyse
+  özdeş satırlarla taşardı.
+- Bir aracın çıktısı eksik/bozuksa o kaynaktan hiç olay gelmez (uyarı
+  loglanır), diğerleri etkilenmez — "en iyi çaba" ilkesi.
+
+**Kapsam sınırı:** Plaso'nun ~600 ayrıştırıcısının (tarayıcı geçmişi,
+disk imajı biçimleri vb.) YERİNE geçmez — sadece TriageChain'in zaten
+topladığı/ayrıştırdığı dört kaynağı birleştirir.
 
 Çıktı düzeni:
 

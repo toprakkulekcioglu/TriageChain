@@ -310,3 +310,26 @@ dosyalarının atlandığını hem de gerçek hive için `subprocess`in doğru
   şüpheli kaldı). Düzeltme: `any("Bad.evtx" in part for part in argv)` —
   argv şablonundaki değişkenin TAM OLARAK hangi pozisyonda olduğunu asla
   varsaymayın, şablonun kendisine bakın.
+- **RECmd'nin gizli `--nl` bayrağı bulundu — "dirty hive" notunu
+  tamamlıyor**: Birleşik zaman çizelgesi doğrulaması sırasında gerçek bir
+  `NTUSER.DAT` kovanına karşı DFIRBatch.reb çalıştırılınca "Registry hive
+  is dirty and no transaction logs were found... Aborting!!" hatası
+  alındı — bu, projenin ZATEN bildiği bir sınırlamaydı (bkz. yukarıdaki
+  "Registry kovanları LOG dosyaları olmadan toplanıyordu" kaydı) ama o
+  zaman sadece "yanına .LOG dosyaları da toplanmalı" çözümü biliniyordu.
+  `RECmd.exe --help` okununca `--nl` bayrağının ("allow transaction log
+  files to not exist for dirty hives") tam da bunun için var olduğu
+  görüldü — `--nl` eklenince aynı kovan sorunsuz işlendi (2.759 değer
+  satırı). TriageChain'in router'ı zaten LOG dosyalarını topladığı için
+  `--nl`'e ihtiyaç YOK ve router.py'ye eklenmedi; ama tool_mapping.yaml'a
+  dokunmadan önce aracın TÜM `--help` çıktısını okumanın (sadece bilinen
+  bayrakları değil) yeni bir gerçek çözüm yolu ortaya çıkarabileceğinin
+  somut bir örneği.
+- **EZ Tools'un varsayılan CSV dosya adı SABİT DEĞİL, zaman damgalı**:
+  `--csvf` verilmeden (`router.py`'nin yaptığı gibi) çağrılan MFTECmd/
+  RECmd/EvtxECmd/PECmd, `<yyyyMMddHHmmss>_<Araç>..._Output.csv` biçiminde
+  KENDİ dosya adını üretiyor — sabit bir isim asla varsayılamaz, çıktı
+  dizini glob ile taranmalı (bkz. `reporting/timeline.py`). PECmd ayrıca
+  `--csv` verildiğinde kendiliğinden İKİNCİ bir dosya (`*_Output_
+  Timeline.csv`, sade `RunTime,ExecutableName`) daha üretiyor — zaman
+  çizelgesi ihtiyacı için ana CSV'yi ayrıştırmaya hiç gerek yok.

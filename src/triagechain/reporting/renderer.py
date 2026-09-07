@@ -133,6 +133,7 @@ def render_html(report: Report) -> str:
         + _capa_section(report)
         + _correlation_section(report)
         + _engine_agreements_section(report)
+        + _timeline_section(report)
         + _custody_section(report)
         + "</div>",
         "<footer>TriageChain &middot; bu rapor otomatik üretildi; yanındaki "
@@ -413,6 +414,47 @@ def _engine_agreements_section(report: Report) -> str:
         "motorun anlaşması, tek motora göre daha güçlü bir doğrulamadır.</p>"
         f"<table><tr><th>Dosya</th><th>Kural</th></tr>{body}</table>"
     )
+
+
+_TOOL_LABELS = {
+    "mftecmd": "$MFT", "recmd": "Registry", "evtxecmd": "Olay Günlüğü", "pecmd": "Prefetch",
+}
+
+
+def _timeline_section(report: Report) -> str:
+    """MFTECmd/RECmd/EvtxECmd/PECmd ciktilarindan birlestirilmis, kronolojik
+    zaman cizelgesi -- Plaso'nun 'super zaman cizelgesi' fikrinin yeni bir dis
+    arac gerektirmeyen hali (bkz. reporting/timeline.py)."""
+    if not report.timeline:
+        return (
+            "<h2>Zaman çizelgesi</h2>"
+            '<div class="empty">Zaman çizelgesi oluşturulamadı — '
+            "<code>triagechain route</code> hiç çalışmamış olabilir ya da "
+            "hiçbir araç CSV çıktısı üretmedi.</div>"
+        )
+    shown = report.timeline[:HTML_FINDING_LIMIT]
+    body = "".join(
+        "<tr>"
+        f"<td>{_e(event.timestamp)}</td>"
+        f"<td>{_e(_TOOL_LABELS.get(event.tool, event.tool))}</td>"
+        f"<td>{_e(event.description)}</td>"
+        f"<td>{_e(event.detail)}</td>"
+        "</tr>"
+        for event in shown
+    )
+    out = [
+        "<h2>Zaman çizelgesi</h2>"
+        '<p class="sub">$MFT, registry, olay günlüğü ve prefetch çıktılarından '
+        "birleştirilmiş, kronolojik sıralı olaylar.</p>"
+        "<table><tr><th>Zaman</th><th>Kaynak</th><th>Olay</th>"
+        f"<th>Ayrıntı</th></tr>{body}</table>"
+    ]
+    if len(report.timeline) > len(shown):
+        out.append(
+            f'<p class="sub">{len(report.timeline)} olayın ilk {len(shown)} tanesi '
+            "gösteriliyor; tamamı <code>report.json</code> içinde.</p>"
+        )
+    return "".join(out)
 
 
 def _custody_section(report: Report) -> str:

@@ -164,8 +164,13 @@ geliştirmeleri) tamamlanan özellikleri anlatır.
   (Hayabusa VE Chainsaw ayrı ayrı — taranan dosya sayısı, toplam bulgu,
   seviyeye göre dağılım ve bulgu tabloları), YARA eşleşmeleri, capa yetenek
   eşleşmeleri, iki farklı korelasyon bölümü (Sigma+YARA kesişimi VE
-  Hayabusa+Chainsaw motor ittifakı) ve gözetim zincirinin **tam** olay
-  listesi bir arada duruyor.
+  Hayabusa+Chainsaw motor ittifakı), **birleşik zaman çizelgesi**
+  (MFTECmd/RECmd/EvtxECmd/PECmd çıktılarından kronolojik olarak
+  birleştirilmiş — Plaso kurulamadığı için onun YERİNE, hiçbir yeni dış
+  araç eklemeden; kapsamı TriageChain'in kendi dört aracıyla sınırlı,
+  Plaso'nun ~600 ayrıştırıcısının tam yerini TUTMUYOR, bkz.
+  `aldigim_kararlar.md`) ve gözetim zincirinin **tam** olay listesi bir
+  arada duruyor.
 - `report.html` **iki sekmeye** ayrılıyor (saf CSS, JS yok — internetsiz bir
   makinede de çalışır): **Yönetici Raporu** (teknik olmayan, Report'un
   gerçek sayılarından deterministik bir kurala göre hesaplanan risk

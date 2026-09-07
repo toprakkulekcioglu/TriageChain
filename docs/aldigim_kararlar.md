@@ -1375,3 +1375,85 @@ güncellendi). Düzeltme öncesi/sonrası GERÇEK ekran görüntüleriyle görse
 olarak doğrulandı (`.venv`'e yalnızca bu doğrulama için geçici olarak
 kurulan `pillow`, projenin bağımlılıklarına EKLENMEDİ — sadece piksel
 karşılaştırma aracı olarak scratchpad script'inde kullanıldı).
+
+---
+
+## Birleşik zaman çizelgesi: Plaso'nun yerine, ZATEN üretilen EZ Tools CSV'lerini birleştiren yeni bir dış-bağımlılıksız katman
+
+**Karar:** Plaso/log2timeline gerçekten kurulamadığı için (bkz. roadmap.md
+→ "Daha sonra" — `pip install plaso` bu makinede C++ derleme zinciri
+eksikliğinden başarısız oldu, kullanıcı onayıyla ertelendi) roadmap'in
+"süper zaman çizelgesi" hedefine ULAŞMANIN başka bir yolu arandı: Plaso'yu
+YENİDEN KURMAYI denemek yerine, TriageChain'in router katmanının ZATEN
+çalıştırdığı dört EZ Tools'un (MFTECmd/RECmd/EvtxECmd/PECmd) CSV
+çıktılarını okuyup TEK bir kronolojik listede birleştiren yeni, dış araç
+gerektirmeyen bir katman (`reporting/timeline.py`) yazıldı.
+
+Bu dört aracın GERÇEK CSV şemaları önceden hiçbir yerde doğrulanmamıştı
+(router.py sadece bu dosyaları OPAK çıktı olarak üretiyordu, içeriğini
+hiç okumuyordu). Bu yüzden dördü de (2026.5.0, net9 derlemeleri,
+`download.ericzimmermanstools.com`'un resmi manifestinden) indirilip
+GERÇEK örnek verilere karşı çalıştırıldı:
+- **MFTECmd** → `EricZimmerman/MFT` deposunun kendi test paketindeki
+  gerçek küçük bir `$MFT` (643 KB, `MFT.Test/TestFiles/xw/$MFT`).
+- **RECmd** → `EricZimmerman/Registry` deposunun kendi test paketindeki
+  gerçek `NTUSER.DAT` kovanı (DFIRBatch.reb ile, `--nl` bayrağıyla —
+  "dirty hive" kontrolünü atlıyor, bkz. asağıdaki not).
+- **EvtxECmd** → `sbousseaden/EVTX-ATTACK-SAMPLES`'daki gerçek
+  `UACME_59_Sysmon.evtx`.
+- **PECmd** → Plaso'nun KENDİ test paketindeki gerçek bir
+  `NOTEPAD.EXE-D8414F97.pf` (ironik ama pratik: Plaso kurulamadı, ama
+  onun test verisi GitHub'dan serbestçe indirilebiliyor).
+
+Gerçek çalıştırmalardan çıkan, projenin daha önce bilmediği somut
+bulgular: (1) hiçbir arac `--csvf` verilmeden çağrılmadığı için (router.py
+zaten öyle) her biri KENDİ zaman-damgalı varsayılan dosya adını
+(`<yyyyMMddHHmmss>_<Arac>..._Output.csv`) kullanıyor — bu yüzden
+`timeline.py` dosyayı sabit bir adla DEĞİL, glob deseniyle buluyor.
+(2) PECmd `--csv` verildiğinde AYRICA kendiliğinden bir
+`*_Output_Timeline.csv` (sade `RunTime,ExecutableName`) üretiyor —
+`_parse_pecmd` bunu, ana CSV'yi ayrıştırmak yerine DOĞRUDAN okuyor. (3)
+RECmd'nin `--nl` bayrağı ("transaction log dosyaları dirty hive'lar için
+yok sayılsın") mevcut `docs/hatalar_ve_sonuclar.md`'deki "dirty hive"
+notunu TAMAMLIYOR — daha önce sadece "yanında .LOG dosyaları toplanmalı"
+deniyordu, şimdi arac tarafında da bir kaçış yolu olduğu biliniyor
+(TriageChain'in KENDİ akışı zaten LOG dosyalarını toplayıp yanına
+koyduğu için `--nl` router.py'ye eklenmedi, sadece bu doğrulama sırasında
+kullanıldı). (4) RECmd'nin CSV'si DEĞER satırı başınadır (bir anahtarın
+onlarca değeri aynı `LastWriteTimestamp`'i taşır) — bu yüzden
+`_parse_recmd` `(KeyPath, LastWriteTimestamp)` çiftine göre TEKİLLEŞTİRME
+yapıyor (gerçek NTUSER.DAT ile doğrulandı: 2.759 değer satırı → 306
+benzersiz anahtar-yazma olayı).
+
+MFTECmd için MACB (Modified/Accessed/Changed/Born — dört ayrı $STANDARD_
+INFORMATION zaman damgası) deseni Plaso'nun kendi süper-zaman-çizelgesi
+yaklaşımıyla AYNI: her dolu zaman damgası AYRI bir olay olarak yayılıyor,
+boş olanlar (ör. hiç erişilmemiş dosyaların LastAccess'i) atlanıyor.
+
+**Gerekçe:** Bu, projenin "gerçek makinede/gerçek ikiliyle doğrulanmadan
+hiçbir CLI/CSV şeması varsayılmaz" ilkesinin (bkz. `ogrenilenler.md`) bu
+oturumdaki BEŞİNCİ uygulanışı (Hayabusa/YARA/Chainsaw/capa'dan sonra) —
+ve yine en az bir gerçek bulgu (RECmd'nin `--nl` bayrağı, PECmd'nin ayrı
+Timeline CSV'si, dosya adlandırma deseni) önceden BİLİNMEYEN, sadece
+gerçek çalıştırmayla ortaya çıkan bir şeydi. Katman KASITLI olarak
+`reporting/` altında (yeni bir `timeline/` paketi değil): diğer
+reporting/ modülleri gibi salt-okunur, dış program ÇALIŞTIRMAZ, custody
+defterine YAZMAZ — router.py'nin ZATEN ürettiği dosyaları okur.
+
+**Kapsam sınırı (bilinçli):** Bu, Plaso'nun ~600 ayrıştırıcısının
+YERİNE geçmez — sadece TriageChain'in zaten topladığı/ayrıştırdığı dört
+kaynağı (MFT/registry/olay günlüğü/prefetch) birleştirir. Tarayıcı
+geçmişi, disk imajı biçimleri, uygulama-özel artefaktlar gibi Plaso'nun
+kapsadığı diğer yüzlerce kaynak KAPSAM DIŞI kalır — bu roadmap.md'de
+açıkça belirtildi, "Plaso'nun tam yerine geçti" gibi yanlış bir izlenim
+BIRAKILMADI.
+
+**Doğrulama:** `tests/unit/test_timeline.py` (7 test, gerçek CSV
+sütunlarından türetilmiş fixture'larla — MACB genişletme, RECmd
+tekilleştirme, PECmd Timeline CSV önceliği, EvtxECmd MapDescription/
+EventId fallback, eksik dosya/bilinmeyen araç için "olumcul değil"
+davranışı, çok-araçlı kronolojik sıralama), `reporting/models.py`/
+`builder.py`/`renderer.py`'ye entegrasyon + 1 uçtan uca rapor testi
+(`test_timeline_is_built_from_real_pecmd_csv_and_rendered_in_html`),
+GUI'nin Raporlar sayfasına bir özet satırı (`report_field_timeline`) +
+1 test. Tüm paket (183 test) yeşil.

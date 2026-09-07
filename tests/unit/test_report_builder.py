@@ -261,6 +261,44 @@ def test_html_has_both_yonetici_and_uzman_sekmeleri(config):
     assert "Mimikatz Detected" in html
 
 
+def test_timeline_is_built_from_real_pecmd_csv_and_rendered_in_html(config):
+    """routing_manifest.json'daki bir PECmd artefaktinin gercek Timeline
+    CSV'si varsa, Report.timeline dolmali ve HTML'e islenmeli (bkz.
+    reporting/timeline.py -- gercek PECmd 2026.5.0 ciktisindan alinan
+    sutunlarla, aldigim_kararlar.md -> 'Birlesik zaman cizelgesi')."""
+    _write_collection(config)
+    routing = RoutingManifest(case_id=CASE_ID, started_at_utc=_now(), ended_at_utc=_now())
+    output_dir = Path(config.collection.output_dir) / "parsed" / "pecmd" / "prefetch"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "20260101000000_PECmd_Output_Timeline.csv").write_text(
+        "RunTime,ExecutableName\n"
+        "2019-06-05 19:23:00,\\VOLUME{x}\\WINDOWS\\SYSTEM32\\NOTEPAD.EXE\n",
+        encoding="utf-8",
+    )
+    routing.processed.append(
+        ProcessedArtifact(
+            artifact_type_id="prefetch", tool="pecmd", source_path="APP.pf",
+            output_dir=str(output_dir), exit_code=0, stdout_log_path="", stderr_log_path="",
+            duration_seconds=0.1, processed_at_utc=_now(),
+        )
+    )
+    routing.to_json_file(resolve_routing_manifest_path(config))
+
+    report = build_report(config)
+
+    assert len(report.timeline) == 1
+    assert report.timeline[0].tool == "pecmd"
+    assert report.timeline[0].timestamp == "2019-06-05 19:23:00"
+
+    json_path, _, html_path = write_report(config, report)
+    html = html_path.read_text(encoding="utf-8")
+    assert "Zaman çizelgesi" in html
+    assert "NOTEPAD.EXE" in html
+
+    reloaded = Report.from_json_file(json_path)
+    assert reloaded.timeline[0].tool == "pecmd"
+
+
 def test_yara_present_and_correlated_with_sigma_finding(config):
     """YARA VE Sigma ayni dosyayi isaretlerse Report.correlated_artifacts
     dolmali -- bkz. detection/correlation.py."""
