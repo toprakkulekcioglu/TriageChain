@@ -252,7 +252,7 @@ kullanmak için KAPE kurulumu ya da lisansı gerekmiyor.
   konfigürasyonu (`.yaml`) yüklendikten sonra YEDİ komut da (Toplamayı
   Başlat / Yönlendir / Tara / YARA Tara / Chainsaw Tara / capa Tara /
   Rapor Üret) buradan çalıştırılabiliyor; her biri ayrı bir `QThread`'de
-  koştuğu için arayüz donmuyor. **Sidebar'daki altı sayfanın hepsi
+  koştuğu için arayüz donmuyor. **Sidebar'daki yedi sayfanın hepsi
   işlevsel** (yer tutucu sayfa yok): Dashboard (metrik kartları +
   sparkline'lar + zincir durumu rozeti), Toplanan Dosyalar, Delil Zinciri
   (tam olay listesi), Bulgular (Hayabusa + Chainsaw bulgu tabloları, YARA +

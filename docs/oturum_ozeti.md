@@ -334,7 +334,7 @@ tamamı `aldigim_kararlar.md`'ye işlendi.
 
 ## Şu an bekleyen
 
-- Çekirdek fazlar, masaüstü arayüzünün TÜM altı sayfası, YARA, Chainsaw,
+- Çekirdek fazlar, masaüstü arayüzünün TÜM yedi sayfası, YARA, Chainsaw,
   capa, dual-tab raporlama, çoklu disk, custody çoklu-yazıcı, VSS zaman
   aşımı, gömülü fontlar ve standalone `.exe` paketleme bitti.
 - Roadmap'te sırada: **Plaso/log2timeline** (süper zaman çizelgesi) — bkz.

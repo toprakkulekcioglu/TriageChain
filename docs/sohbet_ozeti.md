@@ -22,7 +22,7 @@ kendi git deposu, kendi `.venv`'i, kendi test paketi.
 **toplama → chain-of-custody → yönlendirme → tespit (Hayabusa + Chainsaw,
 iki bağımsız Sigma motoru) → YARA statik imza taraması → capa davranış/
 yetenek analizi → raporlama (Yönetici + Uzman sekmeleri)**, artı gerçek
-bir **PySide6 masaüstü uygulaması** (altı sayfanın hepsi işlevsel) ve
+bir **PySide6 masaüstü uygulaması** (yedi sayfanın hepsi işlevsel) ve
 standalone bir **`TriageChainKonsolu.exe`**. Toplam **175 test, hepsi
 geçiyor** (`QT_QPA_PLATFORM=offscreen ./.venv/Scripts/python.exe -m
 pytest -q`, proje kökünden). Hiçbir şey commit/push edilmedi — kullanıcı

@@ -26,7 +26,7 @@ custody/     → olay modeli, JSONL depolama, hash zincirli defter
 router/      → araç eşleme kataloğu, yönlendirici, yönlendirme manifesti
 detection/   → Hayabusa/Chainsaw/YARA çağrı katalogları, tarayıcılar, korelasyon
 reporting/   → rapor modeli, rapor üretici (builder), HTML render'ı, yönetici özeti
-gui_qt/      → PySide6 masaüstü arayüzü (tema, gömülü fontlar, altı işlevsel sayfa)
+gui_qt/      → PySide6 masaüstü arayüzü (tema, gömülü fontlar, yedi işlevsel sayfa)
 gui/         → eski tkinter arayüzü (duruyor ama `triagechain-gui` artık gui_qt'yi açıyor)
 integrations/→ ileride eklenecek adaptörler için boş yer tutucu
 ```
@@ -454,7 +454,7 @@ gui_qt/theme.py       → tek koyu palet, tipografi/boşluk sabitleri, taban QSS
                         gömülü font yükleme (load_embedded_fonts())
 gui_qt/widgets.py     → Card, PrimaryButton, SecondaryButton, Input, MonoInput,
                         MonoLabel, StatusBadge, ProgressBar, Sparkline
-gui_qt/main_window.py → sidebar + QStackedWidget, altı işlevsel sayfa
+gui_qt/main_window.py → sidebar + QStackedWidget, yedi işlevsel sayfa
                         (Dashboard, Toplanan Dosyalar, Delil Zinciri, Bulgular,
                         Raporlar, Vakalar), aksiyon worker'ları
 gui_qt/app.py         → giriş noktası (`triagechain-gui`)
@@ -514,6 +514,6 @@ kendi kurduğu araçların yolunu konfigürasyonda gösterir.
 **Artık geçerli olmayan eski sınırlar** (tamamlandı, bkz. `aldigim_
 kararlar.md`): "custody defterine aynı anda tek yazıcı" (stdlib dosya
 kilidiyle çözüldü), "sadece sistem diskinin $MFT'si" (çoklu disk desteği
-eklendi), "arayüzde yalnızca Dashboard işlevsel" (altı sayfanın hepsi
+eklendi), "arayüzde yalnızca Dashboard işlevsel" (yedi sayfanın hepsi
 işlevsel), "VSS'te gerçek zaman aşımı yok" (ayrı thread + `join(timeout)`
 ile çözüldü).

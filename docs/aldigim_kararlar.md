@@ -1457,3 +1457,32 @@ davranışı, çok-araçlı kronolojik sıralama), `reporting/models.py`/
 (`test_timeline_is_built_from_real_pecmd_csv_and_rendered_in_html`),
 GUI'nin Raporlar sayfasına bir özet satırı (`report_field_timeline`) +
 1 test. Tüm paket (183 test) yeşil.
+
+---
+
+## Zaman çizelgesi için ayrı bir sidebar sayfası eklendi (kullanıcı tercihiyle)
+
+**Karar:** Yukarıdaki karardan sonra kullanıcıya "Raporlar sayfasındaki
+özet satırı yeter mi, yoksa tam bir sidebar sayfası mı istiyorsunuz"
+sorusu soruldu; kullanıcı tam sayfayı seçti. Yedinci bir sidebar sayfası
+("Zaman Çizelgesi", `clock` ikonu) eklendi — `_build_timeline_page()` +
+`_refresh_timeline()`, custody/bulgular sayfalarıyla AYNI desen (ZAMAN/
+KAYNAK/OLAY/AYRINTI kolonlu tablo, `MonoLabel` ile ayrıntı hücresi,
+`_fit_rows_to_cell_widgets`). `CaseSnapshot.timeline`, `read_snapshot()`
+içinde `routing_manifest.json` zaten okunuyorken (RoutingManifest ayrıştırma
+döngüsü) `build_timeline()` çağrılarak dolduruluyor — routing hiç
+çalışmamışsa ya da hiçbir araç CSV üretmemişse bos-durum notu gösteriliyor.
+
+**Gerekçe:** HTML rapordaki bölüm 500 olayla sınırlıyken (`HTML_FINDING_
+LIMIT`), gerçek bir vakada zaman çizelgesi binlerce olay içerebilir (MFT
+tek başına gerçek bir diskte 100.000+ kayıt üretebilir) — GUI'de ayrı bir
+sayfa, hem kesme sınırı olmadan TAM listeyi göstermeye hem de ayrı bir
+tabloyu (arama/kaydırma) yönetmeye izin veriyor; Raporlar sayfasındaki
+özet satırı ise sadece "kaç olay var, HTML'de bak" diyordu.
+
+**Doğrulama:** Gerçek bir ekran görüntüsü alınıp incelendi (MFT MACB
+genişlemesi + Prefetch çalıştırma + Registry RunMRU'nun doğru kronolojik
+sırada, doğru insan-okur etiketlerle göründüğü doğrulandı — bkz. yukarıdaki
+"Fusion" kararındaki AYNI offscreen-render yöntemi). 3 yeni GUI testi
+(vaka yüklenmeden, route çalışmamışsa boş-durum, gerçek PECmd verisiyle
+dolu). Tüm paket (186 test) yeşil.

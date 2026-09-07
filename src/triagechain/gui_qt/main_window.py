@@ -77,6 +77,7 @@ from triagechain.gui_qt.widgets import (
 from triagechain.reporting.builder import build_report, write_report
 from triagechain.reporting.executive import build_executive_summary
 from triagechain.reporting.models import Report
+from triagechain.reporting.timeline import build_timeline
 from triagechain.router.models import RoutingManifest
 from triagechain.router.runner import run_router
 
@@ -155,7 +156,9 @@ def _event_detail(event) -> str:
 
 # Dashboard disindaki sidebar sayfalari, gosterilis sirasiyla -- hepsi artik
 # gercek sayfa (yer tutucu kalmadi).
-SIDEBAR_PAGES = ("Vakalar", "Delil Zinciri", "Raporlar", "Bulgular", "Toplanan Dosyalar")
+SIDEBAR_PAGES = (
+    "Vakalar", "Delil Zinciri", "Raporlar", "Bulgular", "Toplanan Dosyalar", "Zaman Çizelgesi",
+)
 
 # Sidebar'daki her sayfa satirinin solundaki ikon (bkz. assets/icons/*.svg).
 NAV_ICONS = {
@@ -165,6 +168,7 @@ NAV_ICONS = {
     "Raporlar": "file-text",
     "Bulgular": "search",
     "Toplanan Dosyalar": "database",
+    "Zaman Çizelgesi": "clock",
 }
 
 
@@ -212,6 +216,11 @@ class CaseSnapshot:
     # capa_runner.py), risk/korelasyona KATILMAZ (bkz. reporting/executive.py).
     capa_matches: list = field(default_factory=list)
 
+    # "Zaman Çizelgesi" sayfasi icin: MFTECmd/RECmd/EvtxECmd/PECmd
+    # ciktilarindan birlestirilmis, kronolojik TimelineEvent listesi
+    # (bkz. reporting/timeline.py).
+    timeline: list = field(default_factory=list)
+
     # "Raporlar" sayfasi icin: en son uretilmis report.json (varsa). Tek
     # bir rapor tutuluyor -- write_report() her calistiginda UZERINE yazar,
     # gecmis surum listesi YOK (bkz. reporting/builder.py).
@@ -227,6 +236,13 @@ class CaseSnapshot:
     duration_delta: str = ""
     findings_trend: list = field(default_factory=list)
     findings_delta: str = ""
+
+
+# reporting/renderer.py'deki _TOOL_LABELS ile AYNI eslesme -- HTML rapor ve
+# GUI ayni arac adlarini ayni insan-okur etikete ceviriyor.
+_TIMELINE_TOOL_LABELS = {
+    "mftecmd": "$MFT", "recmd": "Registry", "evtxecmd": "Olay Günlüğü", "pecmd": "Prefetch",
+}
 
 
 def _human_size(num_bytes: int) -> str:
@@ -358,6 +374,7 @@ def read_snapshot(config) -> CaseSnapshot:
 
     # 2) Yonlendirme/tespit manifestleri -> sure her zaman EN SON biten fazdan
     parsed_detection: Optional[DetectionManifest] = None
+    parsed_routing: Optional[RoutingManifest] = None
     for path, model, phase_label in (
         (resolve_routing_manifest_path(config), RoutingManifest, "yönlendirme"),
         (resolve_detection_manifest_path(config), DetectionManifest, "tarama"),
@@ -369,6 +386,8 @@ def read_snapshot(config) -> CaseSnapshot:
         except (OSError, ValueError, KeyError):
             warnings.append(f"{path.name} okunamadı, bozulmuş olabilir.")
             continue
+        if isinstance(parsed, RoutingManifest):
+            parsed_routing = parsed
         if isinstance(parsed, DetectionManifest):
             parsed_detection = parsed
             snapshot.finding_count = len(parsed.findings)
@@ -428,6 +447,17 @@ def read_snapshot(config) -> CaseSnapshot:
             snapshot.capa_matches = list(parsed_capa.matches)
         except (OSError, ValueError, KeyError):
             warnings.append("capa_manifest.json okunamadı, bozulmuş olabilir.")
+
+    # "Zaman Çizelgesi" sayfası için: MFTECmd/RECmd/EvtxECmd/PECmd
+    # çıktılarından birleştirilmiş, kronolojik olay listesi (bkz.
+    # reporting/timeline.py). build_timeline() zaten "en iyi çaba" ilkesiyle
+    # çalışır (bozuk/eksik bir aracın çıktısı olumcul değil), burada sadece
+    # beklenmeyen bir istisna GUI'yi çökertmesin diye sarılıyor.
+    if parsed_routing is not None:
+        try:
+            snapshot.timeline = build_timeline(parsed_routing)
+        except OSError:
+            warnings.append("Zaman çizelgesi oluşturulamadı.")
 
     if phase_labels:
         snapshot.duration_trend = phase_seconds
@@ -700,6 +730,7 @@ class TriageChainWindow(QMainWindow):
         self.stack.addWidget(self._build_findings_page())  # index 3
         self.stack.addWidget(self._build_reports_page())  # index 4
         self.stack.addWidget(self._build_cases_page())  # index 5
+        self.stack.addWidget(self._build_timeline_page())  # index 6
         root.addWidget(self.stack, stretch=1)
         self.setCentralWidget(central)
 
@@ -788,6 +819,8 @@ class TriageChainWindow(QMainWindow):
                 btn.clicked.connect(self._show_reports)
             elif name == "Vakalar":
                 btn.clicked.connect(self._show_cases)
+            elif name == "Zaman Çizelgesi":
+                btn.clicked.connect(self._show_timeline)
             group.addButton(btn)
             layout.addWidget(btn)
             self.nav_buttons[name] = btn
@@ -817,6 +850,9 @@ class TriageChainWindow(QMainWindow):
 
     def _show_cases(self) -> None:
         self.stack.setCurrentIndex(5)
+
+    def _show_timeline(self) -> None:
+        self.stack.setCurrentIndex(6)
 
     # -- Toplanan Dosyalar ---------------------------------------------------
     def _build_files_page(self) -> QWidget:
@@ -996,6 +1032,80 @@ class TriageChainWindow(QMainWindow):
                 badge.set_status(t.SUCCESS, "Doğrulandı")
             self.custody_table.setCellWidget(row, 3, badge)
         _fit_rows_to_cell_widgets(self.custody_table)
+
+    # -- Zaman Çizelgesi ------------------------------------------------------
+    def _build_timeline_page(self) -> QWidget:
+        """MFTECmd/RECmd/EvtxECmd/PECmd ciktilarindan birlestirilmis,
+        kronolojik zaman cizelgesinin TAM listesi -- report.html'deki 'Zaman
+        çizelgesi' bolumunun GUI karsiligi (bkz. reporting/timeline.py).
+        HTML'in aksine burada bir kesme (500 satir) YOK, tum liste gosterilir."""
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(36, 28, 36, 28)
+        layout.setSpacing(t.CARD_GAP)
+
+        title = QLabel("Zaman Çizelgesi")
+        title.setStyleSheet(
+            f"font-family:'{t.FONT_UI}'; font-size:{t.SIZE_TITLE}px; "
+            f"font-weight:600; color:{t.TEXT_MAIN};"
+        )
+        layout.addWidget(title)
+
+        self.timeline_subtitle = QLabel("Henüz bir vaka yüklenmedi.")
+        self.timeline_subtitle.setStyleSheet(
+            f"color:{t.TEXT_SECONDARY}; font-size:{t.SIZE_HELPER}px;"
+        )
+        layout.addWidget(self.timeline_subtitle)
+
+        panel = Card()
+        table = QTableWidget(0, 4)
+        table.setHorizontalHeaderLabels(["ZAMAN", "KAYNAK", "OLAY", "AYRINTI"])
+        _style_ledger_table(table)
+        header = table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.timeline_table = table
+        panel.body.addWidget(table)
+        layout.addWidget(panel, stretch=1)
+
+        self.timeline_empty_note = QLabel(
+            "Henüz bir zaman çizelgesi oluşturulamadı. Dashboard'daki "
+            "\"Yönlendir\" butonuyla toplanan dosyaları işledikten sonra "
+            "burada görünecek."
+        )
+        self.timeline_empty_note.setStyleSheet(
+            f"color:{t.TEXT_SECONDARY}; font-size:{t.SIZE_BODY}px;"
+        )
+        self.timeline_empty_note.setWordWrap(True)
+        layout.addWidget(self.timeline_empty_note)
+        return page
+
+    def _refresh_timeline(self) -> None:
+        snap = self.snapshot
+        if self.config is None:
+            self.timeline_subtitle.setText("Henüz bir vaka yüklenmedi.")
+        else:
+            self.timeline_subtitle.setText(
+                f"{self.config.case.case_id} · {len(snap.timeline)} olay"
+            )
+
+        has_timeline = bool(snap.timeline)
+        self.timeline_table.setVisible(has_timeline)
+        self.timeline_empty_note.setVisible(not has_timeline)
+
+        self.timeline_table.setRowCount(len(snap.timeline))
+        for row, event in enumerate(snap.timeline):
+            self.timeline_table.setItem(row, 0, QTableWidgetItem(event.timestamp))
+            self.timeline_table.setItem(
+                row, 1, QTableWidgetItem(_TIMELINE_TOOL_LABELS.get(event.tool, event.tool))
+            )
+            self.timeline_table.setItem(row, 2, QTableWidgetItem(event.description))
+            detail_label = MonoLabel(event.detail)
+            detail_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+            self.timeline_table.setCellWidget(row, 3, detail_label)
+        _fit_rows_to_cell_widgets(self.timeline_table, column=3)
 
     # -- Bulgular -------------------------------------------------------------
     def _build_findings_page(self) -> QWidget:
@@ -1896,6 +2006,7 @@ class TriageChainWindow(QMainWindow):
         self._refresh_findings()
         self._refresh_reports()
         self._refresh_cases()
+        self._refresh_timeline()
         if self.snapshot.warning:
             self._set_status(self.snapshot.warning, error=True)
 

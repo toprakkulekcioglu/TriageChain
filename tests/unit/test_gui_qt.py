@@ -24,6 +24,7 @@ from triagechain.config.loader import (  # noqa: E402
     resolve_custody_log_path,
     resolve_detection_manifest_path,
     resolve_manifest_path,
+    resolve_routing_manifest_path,
     resolve_yara_manifest_path,
 )
 from triagechain.custody.ledger import CustodyLedger  # noqa: E402
@@ -34,6 +35,7 @@ from triagechain.detection.models import (  # noqa: E402
     YaraMatch,
 )
 from triagechain.reporting.builder import build_report, write_report  # noqa: E402
+from triagechain.router.models import ProcessedArtifact, RoutingManifest  # noqa: E402
 
 pytest.importorskip("PySide6")
 
@@ -151,11 +153,12 @@ def test_pencere_vaka_yuklenmeden_kuruluyor(qt_app, config_path):
 
 
 def test_tum_sidebar_sayfalari_farkli_indekse_gidiyor(qt_app, config_path):
-    """Alti nav dugmesi de cokmeden, BIRBIRINDEN FARKLI bir sayfaya gitmeli.
+    """Yedi nav dugmesi de cokmeden, BIRBIRINDEN FARKLI bir sayfaya gitmeli.
 
     Yer tutucu sayfa artik yok -- 'Vakalar', 'Delil Zinciri', 'Raporlar',
-    'Bulgular', 'Toplanan Dosyalar' hepsi gercek sayfa (bkz. asagidaki
-    test_<sayfa_adi>_sayfasi_* testleri, her biri kendi verisini dogruluyor)."""
+    'Bulgular', 'Toplanan Dosyalar', 'Zaman Çizelgesi' hepsi gercek sayfa
+    (bkz. asagidaki test_<sayfa_adi>_sayfasi_* testleri, her biri kendi
+    verisini dogruluyor)."""
     window = TriageChainWindow()
     seen_indexes = {0}  # Dashboard zaten acik basliyor.
     for name in SIDEBAR_PAGES:
@@ -390,6 +393,59 @@ def test_raporlar_sayfasi_gercek_veri(qt_app, config_path):
     assert window.exec_tile_high.text() == "2"
     assert window.exec_tile_chain.text() == "Doğrulandı"
     assert CASE_ID in window.exec_narrative.text()
+
+
+def test_zaman_cizelgesi_sayfasi_vaka_yuklenmeden(qt_app, config_path):
+    """Vaka yuklenmeden sayfa cokmemeli, bos/durum mesaji gostermeli."""
+    window = TriageChainWindow()
+    window.nav_buttons["Zaman Çizelgesi"].click()
+    assert window.stack.currentIndex() == 6
+    assert window.timeline_table.rowCount() == 0
+    assert "yüklenmedi" in window.timeline_subtitle.text()
+
+
+def test_zaman_cizelgesi_sayfasi_route_calismamissa_bos_not_gosterir(qt_app, config_path):
+    """route hic calistirilmamissa (routing_manifest.json yok) panel bos-durum
+    notu gostermeli -- gercek YARA/Chainsaw/capa panelleriyle AYNI desen."""
+    _write_fake_case(config_path)
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+
+    assert window.timeline_table.isHidden()
+    assert not window.timeline_empty_note.isHidden()
+
+
+def test_zaman_cizelgesi_sayfasi_gercek_pecmd_verisiyle_dolar(qt_app, config_path):
+    """routing_manifest.json'daki bir PECmd artefaktinin gercek Timeline
+    CSV'si varsa tabloya yansimali -- gercek PECmd 2026.5.0 ciktisindan
+    alinan sutunlarla (bkz. reporting/timeline.py, aldigim_kararlar.md)."""
+    config = _write_fake_case(config_path)
+    output_dir = Path(config.collection.output_dir) / "parsed" / "pecmd" / "prefetch"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "20260101000000_PECmd_Output_Timeline.csv").write_text(
+        "RunTime,ExecutableName\n"
+        "2019-06-05 19:23:00,\\VOLUME{x}\\WINDOWS\\SYSTEM32\\NOTEPAD.EXE\n",
+        encoding="utf-8",
+    )
+    routing = RoutingManifest(case_id=CASE_ID, started_at_utc=START, ended_at_utc=START)
+    routing.processed.append(
+        ProcessedArtifact(
+            artifact_type_id="prefetch", tool="pecmd", source_path="APP.pf",
+            output_dir=str(output_dir), exit_code=0, stdout_log_path="", stderr_log_path="",
+            duration_seconds=0.1, processed_at_utc=START,
+        )
+    )
+    routing.to_json_file(resolve_routing_manifest_path(config))
+
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+
+    assert not window.timeline_table.isHidden()
+    assert window.timeline_empty_note.isHidden()
+    assert window.timeline_table.rowCount() == 1
+    assert window.timeline_table.item(0, 0).text() == "2019-06-05 19:23:00"
+    assert window.timeline_table.item(0, 1).text() == "Prefetch"
+    assert "1 olay" in window.timeline_subtitle.text()
 
 
 def test_yuklenen_vakada_metrikler_ve_defter_dogru(qt_app, config_path):
