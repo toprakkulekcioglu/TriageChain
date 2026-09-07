@@ -1,0 +1,27 @@
+# YARA'nin nasil cagrilacagini ve ciktisinin nasil ayristirilacagini tanimlar.
+# hayabusa_args.yaml ile ayni desen: bu bir VERI dosyasidir, kod degil.
+#
+# Asagidaki sablon GERCEK bir yara64.exe 4.5.5 (resmi VirusTotal/yara GitHub
+# surumu) ikilisine karsi, gercek bir esleme ve gercek bir esleşmeyen dosyayla
+# DOGRULANDI (bkz. docs/hatalar_ve_sonuclar.md):
+#   - Esleşme VARSA: "<kural_adi> [<tag1>,<tag2>] [<k>=\"<v>\",...] <dosya>"
+#     (tag/meta koseli parantezleri BOS olabilir, virgulsuz).
+#   - Esleşme YOKSA: bos stdout + cikis kodu 0 (Hayabusa'nin aksine YARA
+#     esleşme olmasa bile bir cikti DOSYASI uretmez, hepsi stdout'a yazilir).
+#   - Kural dosyasi derlenemezse (sozdizimi hatasi) cikis kodu 0'dan farkli.
+#
+# -w (--no-warnings): uyarilar stdout'u kirletmesin diye (orn. yavas
+# desen uyarilari) -- Hayabusa'daki ayni "-w" bayraginin gerekcesiyle karistirilmasin,
+# BU bayrak YARA'nin KENDI "sihirbaz" gibi bir sey acmasiyla ilgili degil,
+# sadece stdout'u ayristirilabilir tutmak icin.
+args:
+  - "-m"
+  - "-g"
+  - "-w"
+  - "{rules_file}"
+  - "{input}"
+
+# Bir stdout satirini YaraMatch alanlarina ayristiran duzenli ifade.
+# Gruplar: 1=kural_adi, 2=tag'ler (virgulle ayrik, bos olabilir),
+# 3=meta ciftleri (virgulle ayrik k="v", bos olabilir), 4=dosya yolu.
+line_pattern: '^(\S+)\s+\[([^\]]*)\]\s+\[([^\]]*)\]\s+(.+)$'

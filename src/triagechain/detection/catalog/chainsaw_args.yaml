@@ -1,0 +1,41 @@
+# Chainsaw'in nasil cagrilacagini ve JSON ciktisinin nasil ayristirilacagini
+# tanimlar. hayabusa_args.yaml ile ayni desen: bu bir VERI dosyasidir, kod
+# degil.
+#
+# Asagidaki sablon GERCEK bir chainsaw 2.16.5 (resmi WithSecureLabs/chainsaw
+# GitHub surumu) ikilisine, GERCEK bir saldiri ornegi .evtx dosyasina
+# (EVTX-ATTACK-SAMPLES) ve GERCEK, resmi SigmaHQ kurallarina karsi
+# DOGRULANDI (bkz. docs/aldigim_kararlar.md) -- 8 gercek bulgu uretildi,
+# asagidaki JSON alan yollari o gercek ciktidan alindi.
+#
+# Hayabusa'dan farki: Chainsaw sonucu bir CSV degil JSON dosyasina yazar
+# (`-o` ile), her bulgu ayri bir liste elemani. `tags` alani zaten Sigma
+# kuralinin kendi metadatasindaki MITRE ATT&CK etiketlerini tasir (Hayabusa
+# icin ayrica CSV sutunu aranan ayni bilgi, burada dogrudan JSON'da).
+#
+# --skip-errors: tek bir bozuk/okunamayan olay tum taramayi durdurmasin.
+args:
+  - "hunt"
+  - "--sigma"
+  - "{rules_dir}"
+  - "--mapping"
+  - "{mapping_file}"
+  - "{input}"
+  - "--json"
+  - "-o"
+  - "{output_json}"
+  - "--skip-errors"
+
+output_filename: "{stem}.chainsaw.json"
+
+# Finding alani -> JSON'daki nokta-ayirilmis yol. "tags" ozel: bir liste,
+# virgulle birlestirilip mitre_tags'e yazilir (Finding.mitre_tags ile ayni
+# bicim, bkz. detection/runner.py).
+json_fields:
+  rule_title: "name"
+  level: "level"
+  timestamp: "timestamp"
+  computer: "document.data.Event.System.Computer"
+  channel: "document.data.Event.System.Channel"
+  event_id: "document.data.Event.System.EventID"
+  mitre_tags: "tags"

@@ -1,0 +1,1 @@
+"""Konfigurasyon semasi ve yukleyicisi."""

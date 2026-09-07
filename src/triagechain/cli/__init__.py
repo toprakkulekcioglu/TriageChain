@@ -1,0 +1,1 @@
+"""Komut satiri arayuzu."""

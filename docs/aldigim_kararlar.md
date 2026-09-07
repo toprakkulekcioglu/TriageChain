@@ -1,0 +1,1377 @@
+# Aldığım Kararlar
+
+Bu proje geliştirilirken benim (Claude) verdiğim, kullanıcının her defasında
+onayını almadığım ama gerekçesi olan teknik/mimari kararların kaydı. Amaç:
+"neden böyle yapıldı" sorusuna gelecekte (kod okunarak değil) doğrudan bu
+dosyadan cevap bulunabilmesi. Yeni bir karar aldıkça buraya yeni bir madde
+ekleniyor — bu dosya sürekli büyüyecek şekilde tasarlandı, geçmiş kayıtlar
+silinmiyor/değiştirilmiyor.
+
+---
+
+## VSS için gerçek zaman aşımı: ayrı daemon thread + `join(timeout)`
+
+**Karar:** `VssSnapshot`'ın hem golge kopya OLUŞTURMA (`__enter__`) hem
+SİLME (`__exit__`) çağrıları artık ayrı bir daemon thread'de çalıştırılıp
+`threading.Thread.join(timeout)` ile bekleniyor (`_run_with_timeout()`).
+Thread `pythoncom` kuruluysa kendi COM apartmanını (`CoInitialize`/
+`CoUninitialize`) açıp kapatıyor — WMI nesneleri apartman-bağlı olduğu
+için oluşturma/sorgu/silme AYNI thread içinde kalıyor, sonuç ana thread'e
+sadece bir sözlük üzerinden taşınıyor.
+
+**Gerekçe:** Roadmap'te ("VSS için gerçek zaman aşımı") zaten bilinen bir
+sınırlama olarak not düşülmüştü: `timeout` parametresi imzada duruyordu
+ama hiç kullanılmıyordu. Python thread'leri ZORLA durdurulamadığı için bu
+gerçek bir "iptal" değil — zaman aşımında kontrol çağırana geri veriliyor
+ama arka plan thread'i (COM kendi apartmanında) çalışmaya devam edebilir.
+Bu, YETİM bir gölge kopya bırakma riski taşır; kullanıcıya `vssadmin list
+shadows` ile elle kontrol önerisi veriliyor. Roadmap'in kendi notu da
+zaten bu riski kabul edip "gerçekten gerekirse" bu deseni öneriyordu.
+
+**Doğrulama:** Gerçek bir askıda-kalma senaryosu simüle eden 2 yeni test
+eklendi (`test_enter_raises_collection_error_on_real_timeout`,
+`test_exit_delete_timeout_is_logged_not_raised`) — sahte WMI çağrısı
+`time.sleep()` ile yavaşlatılıp gerçekten zaman aşımına uğratıldı (mock'un
+kendisi "yavaş" davranmıyor, sadece hata dönmüyor gibi davranmak yerine
+GERÇEKTEN uzun sürüyor). Toplam 131 test yeşil.
+
+---
+
+## Custody defterine çoklu-yazıcı desteği: stdlib dosya kilidi, yeni bağımlılık yok
+
+**Karar:** `custody/storage.py`'ye `locked()` eklendi — Windows'ta
+`msvcrt.locking`, POSIX'te `fcntl.flock` (ikisi de STDLIB) ile ayrı bir
+`.jsonl.lock` dosyası üzerinden özel (exclusive) kilit tutuyor.
+`CustodyLedger.append_event()` artık `last_hash()` okuması ile
+`append_line()` yazmasının TAMAMINI bu kilit içinde, atomik olarak yapıyor.
+Okuma (`read_lines`/`verify_chain`) BİLEREK kilitsiz bırakıldı — log
+dosyasının kendisi değil, ayrı bir `.lock` dosyası kilitlendiği için
+doğrulama hiçbir zaman bir yazıcının arkasında beklemiyor.
+
+**Gerekçe:** Roadmap'te bilinen bir sınırlama olarak duruyordu: "v0.1'de
+bir vaka için tek bir toplama/yönlendirme süreci varsayılıyor (dosya
+kilidi yok); eşzamanlı birden fazla süreç senaryosu ortaya çıkarsa ele
+alınacak." Artık GUI ile CLI'nin AYNI vakaya aynı anda yazması (örn.
+kullanıcı GUI'de "Tara" çalıştırırken elle `triagechain report` çağırması)
+gerçek bir senaryo — kilit olmadan iki yazıcı aynı `prev_hash`'i okuyup
+zinciri ÇATALLAYABİLİRDİ.
+
+**Neden yeni bir bağımlılık eklenmedi:** `msvcrt`/`fcntl` ikisi de Python
+stdlib'inde — projenin "üçüncü parti bağımlılıktan kaçın" ilkesiyle tam
+uyumlu, `filelock` gibi bir pip paketine gerek kalmadı.
+
+**Doğrulama:** `test_concurrent_writers_do_not_fork_the_chain` eklendi —
+8 thread, her biri KENDİ `CustodyLedger` örneğiyle (gerçek ayrı süreçleri
+simüle etmek için paylaşılan bir Python nesnesi değil, dosya sistemi
+seviyesindeki kilidin kendisi test ediliyor) aynı deftere 10'ar olay
+yazıyor; sonuç zincir 80 olayla GEÇERLİ çıkıyor, çatallanma yok. 132 test
+yeşil.
+
+---
+
+## Çoklu disk desteği: SADECE $MFT, katalog mekanizmasına dokunulmadan
+
+**Karar:** `collection.additional_volumes: list[str]` config alanı eklendi
+(örn. `["D:", "E:"]`). Her ek birim için `_collect_additional_volumes()`,
+o birime özel AYRI bir `VssSnapshot(volume=...)` açıp `$MFT`'sini topluyor
+— mevcut `_collect_target()` fonksiyonu AYNEN yeniden kullanılıyor (elle
+bir `ResolvedTarget` kurup besliyor), ikinci bir toplama/hash/hata-kaydı
+yolu YOK.
+
+**Gerekçe:** Roadmap'te not düşülmüştü: "$MFT her NTFS biriminde ayrı
+ayrı var, v0.1 sadece sistem diskini alıyor." Registry kovanları/event
+log/prefetch gibi diğer hedefler Windows KURULUMUNA özgü (sistem
+diskinden başka bir yerde anlamlı bir karşılıkları yok) — bu yüzden
+kasıtlı olarak SADECE `$MFT` çoklu-disk'e açıldı, katalog mekanizmasının
+`%SystemDrive%` varsayımına dokunulmadı (registry/event log/prefetch
+`additional_volumes`'tan ETKİLENMİYOR).
+
+**Doğrulama:** `test_multi_disk_collection.py` — sahte bir `VssSnapshot`
+ile (gerçek WMI'ye ihtiyaç yok, CI Linux'ta da çalışır) hem başarılı
+toplama hem "birim erişilemez" senaryosu (olumcul değil, sadece o birim
+için hata) test edildi; ayrıca sürücü harfi doğrulaması (`"D:"` kabul,
+`"not-a-drive"` reddedilir) ve normalizasyon (`"d:\\"` → `"D:"`) ayrı
+testlerle kapsandı. 136 test yeşil.
+
+---
+
+## MITRE ATT&CK etiketleri eklendi, CVE entegrasyonu eklenmedi
+
+**Karar:** Kullanıcı "CVE kodları ve MITRE ATT&CK verisi eklemeli miyiz"
+diye sordu. Araştırdım (bkz. Sources aşağıda): Sigma kuralları zaten kendi
+metadatasında MITRE ATT&CK teknik/taktik etiketleri taşıyor
+(`tags: [attack.t1055, ...]`), Hayabusa bunu CSV'ye `MitreTactics` gibi bir
+sütun olarak yansıtabiliyor. Bu yüzden `Finding.mitre_tags` alanı eklendi
+(`detection/models.py`, `detection/catalog/hayabusa_args.yaml`,
+`detection/runner.py`) — sütun yoksa boş kalır, hiçbir şey uydurulmaz, yeni
+bağımlılık/ağ çağrısı YOK. CVE tarafında ise **eklemedim**: bu proje bir
+zafiyet tarayıcısı değil, toplanan artefaktlardan (MFT/registry/event log)
+zaten-gerçekleşmiş-ihlal göstergesi çıkarıyor — CVE'nin gerçek/uydurmasız
+bağlanabileceği bir veri kaynağı (ör. yüklü yazılım envanteri + zafiyet
+veritabanı eşlemesi) şu an mimaride yok.
+
+**Gerekçe:** Projenin temel ilkesi "hiçbir şey uydurulmaz, sadece diskteki
+gerçek veri okunur" ([[project_triagechain]]). MITRE ATT&CK için gerçek bir
+veri kaynağı zaten var (Sigma/Hayabusa), CVE için yok — üretmek CVE
+alanlarını boş/anlamsız bırakır ya da (daha kötüsü) sahte doldurmaya
+zorlar. Ayrıca canlı bir CVE/MITRE API çağrısı, raporun "tamamen offline"
+ilkesini (bkz. Faz 5, `roadmap.md`) bozardı; Sigma metadata yaklaşımı ağ
+çağrısı gerektirmiyor.
+
+**Kaynaklar:** [Sigma Rules Explained](https://www.socsimulator.com/blog/sigma-rules),
+[SigmaHQ/sigma](https://github.com/sigmahq/sigma) — `tags:` alanının
+MITRE ATT&CK teknik/taktik eşlemesi için kullanıldığını doğruluyor.
+
+---
+
+## YARA entegrasyonu: kural dosyası vendor edilmedi, CLI-BYO deseni korundu
+
+**Karar:** YARA, Hayabusa ile BİREBİR aynı mimari desende eklendi:
+`detection.yara_path`/`yara_rules_file` config alanları, `subprocess`
+çağrısı (asla `shell=True`, argümanlar liste, mutlak yollar, zaman aşımı),
+kendi manifesti (`yara_manifest.json`, `YaraManifest`/`YaraMatch`
+modelleri). Yaygın açık kaynak YARA kural setlerinden biri (örn.
+Yara-Rules/rules) PROJEYE VENDOR EDİLMEDİ.
+
+**Gerekçe:** Yara-Rules/rules GNU GPLv2 lisanslı — bunu pakete gömmek
+lisans uyumluluğu sorusu açardı (bu proje şu an hiçbir GPL bağımlılığı
+taşımıyor). Ayrıca proje zaten kurulu bir ilke olarak "araç TriageChain
+ile dağıtılmaz, kullanıcı kendi kurduğu/yazdığı kural setinin yolunu
+bildirir" desenini benimsiyor (bkz. Hayabusa/RECmd/EvtxECmd/MFTECmd —
+hiçbiri vendor edilmedi). Entegrasyonu GERÇEK bir ikiliye karşı test
+etmek için resmi `VirusTotal/yara` GitHub sürümünden (BSD-3-Clause,
+`v4.5.5`, `yara-4.5.5-2368-win64.zip`) `yara64.exe` indirilip elle
+yazılmış, orijinal (lisans sorunu olmayan) 2 kuralla gerçek bir eşleşme +
+gerçek bir eşleşmeme senaryosu doğrulandı; bu ikili/kurallar depoya
+commit EDİLMEDİ, sadece geçici test ortamında kullanıldı.
+
+**Alternatif (kullanılmadı):** Yara-Rules/rules ya da benzer bir GPLv2/
+DRL-lisanslı seti pakete gömmek — daha "hazır" bir başlangıç seti
+sağlardı ama lisans karmaşası ve "araç dağıtılmaz" ilkesiyle çelişki
+yaratırdı.
+
+---
+
+## VSS erişimi: `pywin32`/COM yerine `vssadmin` subprocess çağrısı
+
+**Karar:** Kilitli Windows dosyalarına (`$MFT`, registry kovanları) erişim
+için `pywin32` ile COM API'si değil, `subprocess` ile `vssadmin
+create/delete shadow` komut satırı kullanıldı.
+
+**Gerekçe:** Kullanıcı projede "bağımlılıktan kaçınalım" tercihini açıkça
+belirtti. `pywin32` yeni bir üçüncü parti bağımlılık eklerken, `vssadmin`
+zaten Windows'ta hazır bulunan bir sistem aracı — aynı işi ek bir pakete
+ihtiyaç duymadan yapıyor.
+
+**Alternatif (kullanılmadı):** `pywin32` ile doğrudan VSS COM API'sini
+kullanmak — daha "temiz"/programatik olurdu ama yeni bağımlılık demekti.
+
+---
+
+## Dashboard'un görsel yeniden tasarımı: font sorunu tespit edildi ~~düzeltmesi ertelendi~~ ÇÖZÜLDÜ
+
+**Karar:** Kullanıcının onayladığı referans tasarıma göre `theme.py`
+(RADIUS 5→14, RADIUS_SM=10, CARD_PADDING/CARD_GAP 20/16→24/24, büyük metrik
+değeri 30px/500→36px/700), `widgets.py` (Card başlığı büyük beyaz başlık,
+StatusBadge daha dolgun pill, Sparkline'a glow) ve `main_window.py`
+(sidebar'a ikon+"GENEL" bölüm başlığı, 7 yeni SVG ikon) güncellendi.
+Kullanıcı gerçek masaüstünde çalıştırınca fontların (Inter/JetBrains Mono)
+beklenenden çok farklı göründüğünü bildirdi — muhtemelen bu iki font
+sistemde kurulu değil ve Qt sessizce bir yedek fonta düşüyor. Kullanıcının
+kendi talimatıyla ("tasarıma sonradan döneriz") bu sorunun kök nedenini
+araştırmak/düzeltmek bilinçli olarak ERTELENDİ, öncelik placeholder
+sayfaların işlevselleştirilmesine kaydırıldı.
+
+**Gerekçe:** `RADIUS`/`CARD_PADDING` gibi jeton değişiklikleri anında/güvenle
+uygulanabilir tasarım kararlarıydı; font kurulumu ise kullanıcının
+makinesine özel bir ortam sorunu olabilir ve kullanıcı bunu şimdilik
+kapsam dışı bıraktı.
+
+**Kalan iş (sonraya):** ~~`theme.py`'deki `FONT_UI`/`FONT_MONO` gerçekten
+sistemde kurulu mu doğrulanmalı (`QFontDatabase.families()`); değilse ya
+fontlar paketle birlikte gömülüp `QFontDatabase.addApplicationFont()` ile
+yüklenmeli ya da gerçekten kurulu bir sistem fontuna geri dönülmeli.~~
+
+**ÇÖZÜLDÜ (sonraki turda):** `ui-ux-pro-max` tasarım verisi de Inter +
+JetBrains Mono eşleştirmesini bu tür bir güvenlik/DFIR aracı için ayrıca
+doğruladı (JetBrains Mono özellikle "security tools" için öneriliyor) —
+yani sorun font SEÇİMİNDE değil, KURULUMUNDAYDI. Çözüm: resmi GitHub
+release'lerinden (Inter v4.1, JetBrains Mono v2.304 — ikisi de OFL 1.1)
+kullanılan 4 ağırlık (Regular/Medium/SemiBold/Bold) indirilip
+`gui_qt/assets/fonts/`'a gömüldü (bkz. oradaki `PROVENANCE.md`),
+`theme.load_embedded_fonts()` eklendi ve `app.py:main()` başında
+`QFontDatabase.addApplicationFont()` ile yükleniyor. Artık hangi
+makinede çalıştığından bağımsız olarak hep aynı font kullanılıyor —
+gerçek offscreen render ile doğrulandı (`QFontDatabase.families()`'te
+ikisi de göründü, ekran görüntüsünde gerçek Inter/JetBrains Mono
+render edildi).
+
+---
+
+## KAPE'nin kendisi değil, KapeFiles hedef tanımları kullanıldı
+
+**Karar:** Toplama kataloğu (`collection/catalog/default_targets.yaml`),
+KAPE.exe'yi hiç çağırmadan, sadece KAPE'nin açık kaynaklı hedef tanımları
+(`EricZimmerman/KapeFiles`) referans alınarak elle yazıldı.
+
+**Gerekçe:** KAPE'nin kendisi ücretsiz ama **kapalı kaynak** (Kroll EULA'sı
+ile dağıtılıyor) — kullanıcı başta "KAPE açık kaynaklı, hepsini oradan
+çekelim" varsayımıyla geldi, bu yanlıştı. KapeFiles deposu ayrı ve gerçekten
+açık kaynak (sadece yol/tanım verisi). Bu şekilde hem "KAPE'nin bildiği
+hemen hemen her artefakt" kapsamına yakın bir kapsam elde edildi hem de
+KAPE kurulumu/lisansı gerektiren bir bağımlılık oluşmadı.
+
+---
+
+## Config doğrulama için `pydantic` seçildi (stdlib `dataclasses` değil)
+
+**Karar:** Konfigürasyon şeması (`config/schema.py`) `pydantic` ile
+yazıldı; elle `if/raise` doğrulamalarıyla stdlib `dataclasses` değil.
+
+**Gerekçe:** Profesyonel DFIR yazılımlarında (Volatility 3, Autopsy, Plaso
+gibi) "güven-kritik çekirdek" (hash hesaplama, chain-of-custody) stdlib'e
+yakın/az kod ile tutulur, ama "çevresel" katmanlar (config okuma, CLI, rapor
+üretimi gibi) için olgun kütüphaneler kullanmak normaldir. Config
+doğrulama tam olarak bu çevresel katmana giriyor — pydantic hash-chain'e
+dokunmuyor, sadece daha az kod ve daha iyi hata mesajı sağlıyor. Kullanıcıya
+bu tradeoff anlatılıp onay alındıktan sonra uygulandı (tek üçüncü parti
+bağımlılık kararı kullanıcıya doğrudan soruldu, gerisi bana bırakıldı).
+
+---
+
+## Router'da (ve sonraki her dış-araç katmanında) 4 güvenlik kuralı zorunlu
+
+**Karar:** Dış program (subprocess) çağıran her katman şu 4 kuralı
+uygulamak zorunda: (1) `shell=True` asla, argüman listesi kullan; (2) araç
+yolu config'de mutlak olmalı; (3) girdi dosyası yolu, `Path.resolve()` +
+`is_relative_to()` ile vakanın kendi çıktı ağacı içinde olduğu doğrulanmadan
+hiçbir subprocess'e verilmez; (4) her çağrının `timeout=` değeri olmalı.
+
+**Gerekçe:** Bir adli bilişim aracının en riskli yüzeyi, kendi ürettiği
+ama sonradan elle değiştirilebilecek ara veriye (manifest.json gibi) körü
+körüne güvenip onu bir dış programa geçirmesidir. Bu 4 kuralın HİÇBİRİ tek
+başına yeterli değil (bkz. `docs/ogrenilenler.md`), üçü/dördü birlikte
+gerekiyor. Bu kural şu an sadece router'da değil, ileride yazılacak her
+subprocess-çağıran katmanda (detection/Hayabusa dahil) aynen uygulanacak.
+
+---
+
+## `RouterError` eklendi — ham `OSError` kullanıcıya sızmasın diye
+
+**Karar:** Router çıktı dizini oluşturamazsa (disk dolu/izin yok) artık ham
+bir Python `OSError` değil, tipli `RouterError` fırlatılıyor; CLI bunu
+diğer hata tipleriyle aynı temiz mesaj kalıbına çeviriyor.
+
+**Gerekçe:** İlk implementasyonda bu bilinçli olarak "ölümcül" bırakılmıştı
+ama tipli hataya sarma adımı atlanmıştı — kod incelemesi sırasında fark
+edip düzelttim (bkz. `docs/hatalar_ve_sonuclar.md`). Kullanıcıya sorulmadan,
+projenin zaten var olan hata-sarma desenini (`CustodyLedgerError` gibi)
+takip ederek doğrudan uygulandı.
+
+---
+
+## Basit çalıştırma arayüzü için `tkinter` seçildi (PySide6/CustomTkinter değil)
+
+**Karar:** `gui/app.py`, stdlib `tkinter` ile yazıldı; chameleon
+projesindeki gibi `PySide6`/`customtkinter` kullanılmadı.
+
+**Gerekçe:** Kullanıcı "basit bir arayüz, profesyonel tasarım ilerideki bir
+aşamada" dedi. `tkinter` stdlib olduğu için hiçbir bağımlılık eklemiyor —
+"şimdilik sade, sonra profesyonelleştir" planına tam uyuyor. Profesyonel
+tasarım aşamasına geçildiğinde bu karar yeniden değerlendirilebilir (o
+zaman PySide6 gibi bir kütüphane gerekebilir, ama bu YENİ bir karar/onay
+gerektirir).
+
+---
+
+## Zamanlanmış görev: bulut rutin değil, yerel Windows Task Scheduler
+
+**Karar:** Gece otomasyonu, Anthropic bulutunda çalışan bir "routine"
+yerine, kullanıcının kendi bilgisayarında yerel bir Windows Scheduled Task
+olarak kuruldu.
+
+**Gerekçe:** Bulut rutinler projeye erişmek için önce GitHub'a push
+gerektiriyor (proje şu an sadece yerel, `git init` yapıldı ama remote yok).
+Kullanıcıya iki seçenek (bulut vs. yerel) açıkça sunuldu, kullanıcı yerel
+seçeneği seçti — bunun karşılığında bilgisayarın o saatte açık/erişilebilir
+olması gerektiği kabul edildi (bkz. aşağıdaki "uyku modu" kararı).
+
+---
+
+## Otomasyon script'i: `--dangerously-skip-permissions` DEĞİL, `--permission-mode auto` + `--permission-prompts none`
+
+**Karar:** Gece 04:00'te çalışacak `claude.exe` çağrısı, tüm güvenlik
+kontrollerini atlayan `--dangerously-skip-permissions` yerine
+`--permission-mode auto --permission-prompts none` ile yapılandırıldı.
+
+**Gerekçe:** İlk yazdığım script `--dangerously-skip-permissions`
+kullanıyordu; bu, Claude Code'un kendi güvenlik sınıflandırıcısı
+tarafından REDDEDİLDİ (riskli bulundu). Bunun yerine, bu oturumda zaten
+aktif olan "auto mode" (sınıflandırıcı riskli işlemleri otomatik reddeder,
+güvenli işlemler otomatik onaylanır) + `--permission-prompts none` (bir
+onay gerekseydi bile kimse orada olmadığı için sonsuza dek beklemek yerine
+otomatik reddedilir, böylece görev asla "askıda" kalmaz) kombinasyonu
+kullanıldı. Bu, hem gözetimsiz çalışmayı mümkün kılıyor hem de tüm güvenlik
+ağını devre dışı bırakmıyor.
+
+---
+
+## Zamanlanmış görevde "Bilgisayarı uyandır" (`WakeToRun`) etkinleştirildi
+
+**Karar:** Windows Scheduled Task'a `-WakeToRun` ayarı eklendi.
+
+**Gerekçe:** Kullanıcı sabah 04:00 civarında namazda olacağını, bilgisayarı
+o saatte açık bırakamayacağını ama UYKU MODUNDA bırakabileceğini belirtti.
+`WakeToRun`, bilgisayar uyku modundaysa (S3) görevi çalıştırmak için onu
+uyandırmayı DENER. Bunun çalışması için (a) bilgisayarın fişe takılı
+olması gerekiyor (bu makinede pil modunda uyandırma zamanlayıcıları tamamen
+kapalı, `powercfg` ile doğrulandı), (b) donanım/BIOS'un RTC uyandırmayı
+gerçekten desteklemesi gerekiyor — ikinci koşul benim tarafımdan kesin
+garanti edilemez, sadece yazılım tarafı doğru kuruldu.
+
+**Sonuç:** Görev gece hiç çalışmadı (`LastRunTime` "hiç çalışmadı" durumunda
+kaldı, log/`SONUC.md` dosyası oluşmadı) — muhtemelen bilgisayar
+uyandırılamadı. Kullanıcı sabah yeniden buradayken görev silinip Faz 4 canlı
+olarak (bu oturumda) yaptırıldı. Zamanlanmış/gözetimsiz otomasyon fikri
+gelecekte tekrar denenebilir ama bu makinenin uyandırma davranışı önce ayrıca
+doğrulanmalı.
+
+---
+
+## Hayabusa çağrı sözdizimi gerçek araçla doğrulandı, `csv-timeline` varsayımı yanlış çıktı
+
+**Karar:** Kullanıcının bilgisayarında zaten kurulu bir Hayabusa 1.4.1
+bulunduğu öğrenilince, onu (`--help` ile, salt-okunur) doğrudan çalıştırıp
+gerçek CLI sözdizimini kontrol ettim ve `detection/catalog/hayabusa_args.yaml`
+şablonundaki yanlış `csv-timeline` alt komutunu kaldırdım.
+
+**Gerekçe:** Faz 4 ajanı bu sözdizimini Hayabusa hiç kurulu olmadan tahmin
+etmişti (makul ama doğrulanamamış bir varsayımdı). Kullanıcı "bende Hayabusa
+zaten vardı" deyince, gerçek `--help` çıktısına bakmak tahminde ısrar
+etmekten kesinlikle daha iyi bir seçenekti — 1.4.1 sürümünün hiç alt komut
+kullanmadığı (`hayabusa.exe -f dosya [OPTIONS]`), `-f`/`-r`/`-o`/`-q`
+bayraklarının doğru olduğu ama `csv-timeline`'ın var olmadığı ortaya çıktı.
+
+**Alternatif (kullanılmadı):** Kullanıcıya sorup onlardan `--help` çıktısını
+yapıştırmalarını istemek — daha yavaş olurdu, aracın yolu zaten bulunabildiği
+için doğrudan kendim çalıştırmak tercih edildi.
+
+**Yapılamayan kısım:** Gerçek bir `.evtx`'e karşı tam bir tarama (CSV
+başlıklarını da doğrulamak için) denendi ama kullanıcının yerel `rules/`
+klasörü boş git submodule olduğundan (`git submodule update --init`
+çalıştırılmamış) Hayabusa bir Rust panic ile durdu — bu TriageChain'in değil,
+kullanıcının yerel kurulumunun eksikliği, bu yüzden düzeltmeye çalışmadım.
+
+---
+
+## Hayabusa'nın eski (1.4.1) kurulumu silinmek yerine, GitHub'dan güncel (4.0.0) sürüm ayrı bir klasöre indirildi
+
+**Karar:** Kullanıcı "şu anki Hayabusa'yı silip [güncelini] kuralım" dedi.
+Ben eski klasörü SİLMEDİM — bunun yerine GitHub'ın resmi releases API'siyle
+en güncel sürümü (v4.0.0, `hayabusa-4.0.0-win-x64.zip`, 44 MB, gerçek Sigma
+kuralları dahil) bulup ayrı, yeni bir klasöre indirip açtım.
+
+**Gerekçe:** Kalıcı dosya silme benim için yasak bir eylem kategorisi
+(geri alınamaz veri kaybı riski) — kullanıcı açıkça istese bile bunu ben
+yapmıyorum, kullanıcı kendisi yapmalı. Burada silmeye hiç gerek de yoktu:
+yeni sürümü ayrı bir klasöre kurup config'i ona işaret ettirmek, eskisini
+silmekle AYNI sonucu (güncel, çalışan bir Hayabusa) veriyor, üstelik geri
+alınabilir/risksiz.
+
+**Sonuç:** v4.0.0'ın CLI'ı 1.4.1'den TAMAMEN FARKLI çıktı — alt komut
+tabanlı (`dfir-timeline`) ve etkileşimli bir sihirbazı var (`-w` ile
+kapatılıyor). Bu, "bir sürümde doğrulanan bir varsayım başka bir sürümde
+geçersiz olabilir" dersini somutlaştırdı (bkz. `docs/ogrenilenler.md`).
+`hayabusa_args.yaml` v4.0.0'a göre güncellendi ve gerçek bir `.evtx`'e karşı
+(exit code 0) çalıştığı doğrulandı; CSV başlıkları ise bu sakin makinedeki
+loglarda hiç Sigma eşleşmesi olmadığı (0 bulgu) için hâlâ doğrulanamadı.
+
+---
+
+## VSS oluşturma yolu `vssadmin`'den WMI'ye (`Win32_ShadowCopy.Create`) taşındı
+
+**Karar:** Kullanıcının onayıyla gerçek bir Yönetici (UAC) oturumunda canlı
+test yapıldığında `vssadmin create shadow`'un bu makinede (ve muhtemelen
+güncel Windows istemci sürümlerinde genel olarak) çalışmadığı ortaya çıktı
+— komut kendi yardım metninde bile artık listelenmiyor. Golge kopya
+OLUŞTURMA kısmı `powershell.exe` üzerinden WMI'nin `Win32_ShadowCopy.Create()`
+metodunu çağıracak şekilde değiştirildi; SİLME kısmı (`vssadmin delete
+shadows`) değişmedi çünkü o hâlâ çalışıyor (ayrıca doğrulandı).
+
+**Gerekçe:** Faz 1 tasarımı bu komutu, o an gerçek bir Windows makinesinde
+test edilemediği için "muhtemelen çalışır" varsayımıyla seçmişti. Gerçek
+test bunun yanlış olduğunu gösterince, aynı "pywin32/COM'a gerek yok"
+ilkesini koruyan bir alternatif arandı — `powershell.exe` de zaten Windows'a
+gömülü, ek bağımlılık getirmiyor.
+
+**Alternatif (kullanılmadı):** `pywin32`'nin VSS COM arayüzünü doğrudan
+kullanmak — daha "temiz" olurdu ama ilk günden beri kaçınılan üçüncü parti
+bağımlılığı geri getirirdi.
+
+**Sonuç:** Kullanıcının gerçek bilgisayarında, gerçek bir UAC oturumunda
+uçtan uca doğrulandı (gölge kopya oluşturuldu, dosya okundu, temizlendi,
+kalıntı kalmadı). Bu modül için önceden hiç birim testi yoktu, 7 yeni test
+eklendi (toplam 74). Detaylar: `docs/hatalar_ve_sonuclar.md`.
+
+---
+
+## Registry kovanlarına `.LOG1`/`.LOG2` toplama eklendi; router bunları tek başına işlemeyecek şekilde güncellendi
+
+**Karar:** Kullanıcının gerçek laboratuvar verisiyle RECmd test edilirken
+"dirty hive" hatası bulununca, `collection/catalog/default_targets.yaml`'daki
+4 temel kovan hedefine (`registry_system/sam/security/software`) `.LOG1`/
+`.LOG2` glob yolları eklendi; `router/runner.py`'ye de bu uzantıyla biten
+dosyaların hiçbir araca gönderilmeden atlanmasını sağlayan bir kontrol
+eklendi.
+
+**Gerekçe:** LOG dosyaları hive ile AYNI dizinde olmadan RECmd onları
+bulup "replay" edemiyor — bu yüzden aynı hedefin (`target_id`) altında
+toplanmaları gerekiyordu (collector, her hedefi kendi alt dizinine
+yazıyor). Ama bu, LOG dosyalarının da router tarafından `registry_system`
+tipiyle eşleşip BAĞIMSIZ birer RECmd girdisi sanılması riskini doğurdu —
+kullanıcıya sormadan, kendi başıma dosya-adı bazlı bir atlama kuralı
+ekleyerek çözdüm (mevcut mimariyi bozmayan en küçük değişiklik).
+
+**Alternatif (kullanılmadı):** LOG dosyaları için ayrı bir `target_id`
+(`registry_system_logs` gibi) açmak — ama bu, collector'ın "her hedef kendi
+alt dizinine yazılır" varsayımıyla çakışırdı (LOG dosyalarının hive ile
+AYNI dizinde olması şart), yani ya collector'ı ya da bu deseni değiştirmek
+gerekirdi. Mevcut hedefin altına eklemek + router'da atlamak, mimariye
+dokunmadan aynı sonucu veriyor.
+
+**Sonuç:** Gerçek bir SYSTEM kovanı + LOG dosyalarıyla RECmd'in artık
+çalıştığı doğrulandı. Yeni bir regresyon testi eklendi (toplam 75 test).
+Detaylar: `docs/hatalar_ve_sonuclar.md`.
+
+---
+
+## Hayabusa argüman şablonu: `csv-timeline` + doğrulanamadığı açıkça yazıldı
+
+**Karar:** `detection/catalog/hayabusa_args.yaml` şablonu
+`csv-timeline -f {input} -r {rules_dir} -o {output_csv} --quiet` olarak
+yazıldı ve YAML'in başına bu sözdiziminin bu ortamda **doğrulanamadığı**
+uyarısı kondu.
+
+**Gerekçe:** Bu makinede Hayabusa kurulu değil, ağ erişimiyle gerçek CLI
+sözdizimini teyit etme imkânı da yoktu. İki seçenek vardı: (a) daha "zengin"
+bir komut satırı tahmin etmek (`--no-wizard`, `--ISO-8601`, profil seçimi
+gibi bayraklar), (b) yalnızca alt komut + girdi + kural klasörü + çıktı gibi
+her sürümde bulunması en muhtemel minimum kümede kalmak. (b) seçildi:
+uydurulan her ek bayrak, ilk gerçek çalıştırmada aracın "bilinmeyen argüman"
+diyip sıfırdan farklı kodla çıkmasına yol açar. Şablon zaten koda gömülü
+olmadığı için (router'daki `tool_mapping.yaml` deseni) düzeltme Python
+değiştirmeden yapılabilir.
+
+**Alternatif (kullanılmadı):** Şablonu `runner.py` içine gömmek — daha az
+dosya olurdu ama doğrulanmamış bir varsayımı kodun içine saklamak, düzeltmeyi
+kullanıcı için "kod değişikliği" haline getirirdi.
+
+---
+
+## Hayabusa'nın CSV başlıkları da kod değil, veri olarak eşlendi
+
+**Karar:** Hayabusa CSV çıktısının sütun adları (`Timestamp`, `RuleTitle`,
+`Level`, ...) `Finding` alanlarına, aynı `hayabusa_args.yaml` içindeki
+`csv_columns` bloğuyla eşleniyor; her alan için birden fazla aday başlık
+denenebiliyor ve karşılaştırma büyük/küçük harf + boşluktan bağımsız.
+
+**Gerekçe:** Argüman şablonuyla tamamen aynı belirsizlik sütun adları için de
+geçerli (sürümler arasında `EventID`/`Event ID` gibi farklar olabiliyor).
+Eşlemeyi de veri dosyasında tutmak, ilk gerçek çalıştırmada "başlıklar
+tanınmadı" uyarısı alındığında düzeltmenin tek bir YAML satırı olmasını
+sağlıyor. Ayrıştırma zaten en iyi çaba ilkesiyle yazıldığı için hiçbir aday
+tutmasa bile koşu düşmüyor.
+
+---
+
+## Tespit manifestini CLI değil, koşunun kendisi diske yazıyor
+
+**Karar:** `routing_manifest.json`'ı `cli/main.py` yazarken,
+`detection_manifest.json`'ı `run_detection()` fonksiyonunun kendisi yazıyor;
+CLI yalnızca yolu ekrana basıyor.
+
+**Gerekçe:** İstenen davranış, `detection_completed` custody olayının
+manifest dosyasının SHA-256'sını taşıması. Hash, dosya diske yazıldıktan
+sonra hesaplanabilir; dolayısıyla yazma işlemi kapanış olayından ÖNCE ve
+custody defterine erişimi olan katmanda olmak zorunda. Alternatif (CLI yazsın,
+sonra ayrı bir "hash'i deftere işle" çağrısı yapılsın) hem iki adıma
+bölünmüş, hem de GUI/başka bir çağıran o ikinci adımı unutursa sessizce
+hash'siz kalan bir zincir üretirdi. Bunun bedeli, router ile küçük bir desen
+farkı olması — kabul edildi ve `_cmd_detect` içinde yorumla işaretlendi.
+
+---
+
+## Araç kullanılabilirliği koşu başına BİR KEZ kontrol ediliyor (router'da dosya başına)
+
+**Karar:** Router her artefakt için ayrı ayrı "araç konfigüre edilmemiş"
+atlaması kaydederken, tespit katmanı bu kontrolü döngüden önce bir kez yapıp
+tek bir `detection_skipped` olayı yazıyor (yükünde kaç dosyanın etkilendiği
+duruyor).
+
+**Gerekçe:** Router'da her artefakt tipi FARKLI bir araca gidebilir, bu yüzden
+atlama kaydı doğal olarak artefakt bazlı. Tespitte ise tüm dosyalar tek bir
+araca (Hayabusa) gidiyor: 200 `.evtx` toplanmış bir vakada aynı cümleyi 200
+kez deftere yazmak zincire bilgi değil gürültü ekler. Aynı sebeple, `.evtx`
+olmayan artefaktlar (prefetch, registry) "atlandı" olarak da kaydedilmiyor —
+onlar bu katmanın işi değil, atlanmış sayılmaları yanıltıcı olurdu.
+
+---
+
+## Custody'ye bulgu başına değil, taranan dosya başına tek özet olay yazılıyor
+
+**Karar:** Her Sigma bulgusu için ayrı bir custody olayı yazılmıyor; taranan
+her dosya için tek bir `detection_completed_for_artifact` olayı (bulgu sayısı
++ seviyeye göre dağılım) yazılıyor, bulgu detayları yalnızca
+`detection_manifest.json`'da duruyor.
+
+**Gerekçe:** Bu, kullanıcının açıkça belirttiği bir istekti; gerekçesi de
+şuydu: gözetim zinciri "kim, ne zaman, neyi işledi" sorusunun kanıtıdır,
+analiz çıktısının kendisinin deposu değildir. Tek bir `.evtx` binlerce bulgu
+üretebilir; bunları zincire yazmak defteri okunamaz hale getirir ve her
+doğrulamayı yavaşlatır. Detayların bütünlüğü, manifest dosyasının SHA-256'sı
+kapanış olayına işlenerek yine de zincire bağlanıyor.
+
+---
+
+## Rapor katmanı custody defterine YAZMAZ (salt-okunur gözlemci)
+
+**Karar:** `triagechain report`, çalıştığında gözetim zincirine hiçbir olay
+eklemiyor; yalnızca manifestleri ve defteri okuyor.
+
+**Gerekçe:** Rapor, zincirin üretim anındaki durumunun fotoğrafıdır. Eğer
+rapor üretimi kendi başına bir `report_generated` olayı yazsaydı, raporun
+içindeki olay listesi ve `verify_chain` sonucu daha yazıldığı anda eskimiş
+olurdu (defterde rapordakinden bir fazla olay bulunurdu) — yani rapor kendi
+iddiasını kendi geçersizleştirirdi. Diğer üç katmanın (toplama/yönlendirme/
+tespit) deftere yazmasının sebebi delil üzerinde **işlem yapmaları**;
+raporlama hiçbir delile dokunmuyor. Bu davranış iki testle kilitlendi
+(defterin baytları rapordan önce ve sonra birebir aynı).
+
+**Alternatif (kullanılmadı):** Raporu yazdıktan sonra `report_generated`
+olayını (rapor sha256'sı ile) deftere eklemek — "rapor şu an üretildi"
+kaydını zincire sokardı ama yukarıdaki tutarsızlığı doğururdu. Raporun
+bütünlüğü bunun yerine yanındaki `report.json.sha256` ile korunuyor.
+
+---
+
+## `report.json.sha256`, `sha256sum` ile doğrulanabilir biçimde yazılıyor
+
+**Karar:** Yan dosyanın içeriği çıplak hex özet değil, `<hash>  report.json`
+(iki boşluk) satırı.
+
+**Gerekçe:** Bu dosyanın tek amacı raporun **bağımsız** olarak
+doğrulanabilmesi. Bu biçimde `sha256sum -c report.json.sha256` (veya Windows'ta
+`certutil`/PowerShell ile elle karşılaştırma) hiçbir ek araç yazmadan
+çalışıyor. Değerin kendisi yine tam olarak
+`hashlib.sha256(report.json içeriği).hexdigest()`.
+
+---
+
+## Rapor kendi kendine yeten bir belge: bulgular rapora kopyalanıyor
+
+**Karar:** `report.json`, tespit bulgularının tamamını (`detection_manifest.json`
+ile aynı `Finding` kayıtlarını) kendi içine kopyalıyor; HTML tablosuna ise
+yalnızca ilk 500 bulgu yazılıyor.
+
+**Gerekçe:** Rapor çoğu zaman vakadan ayrı, tek başına paylaşılan dosyadır —
+başka bir dosyaya bakmadan okunabilmeli. Veri tekrarı bu yüzden bilinçli kabul
+edildi. HTML tarafında ise sınır pratik bir zorunluluk: tek bir `.evtx` binlerce
+Sigma bulgusu üretebilir, hepsini tabloya basmak tarayıcıda açılamayan bir
+sayfa demektir. Sınır aşıldığında HTML bunu açıkça yazıyor ("… bulgunun ilk 500
+tanesi gösteriliyor"), tamamı `report.json`'da duruyor — hiçbir veri sessizce
+kaybolmuyor.
+
+---
+
+## HTML raporunda gerçek Türkçe karakterler, CLI çıktısında ASCII
+
+**Karar:** `report.html` içindeki metinler tam Türkçe yazılıyor ("GEÇERLİ",
+"Yönlendirme henüz çalıştırılmadı"), CLI'nin `print` çıktıları ise projenin
+mevcut deseninde ASCII kalıyor ("GECERLI", "Yonlendirme").
+
+**Gerekçe:** HTML her zaman UTF-8 olarak etiketlenip tarayıcıda açılıyor —
+orada Türkçe karakterin bozulma riski yok ve rapor insan tarafından okunacak
+resmi bir belge. Windows konsolu ise kod sayfasına göre (cp857/cp1254/UTF-8)
+farklı davranıyor; mevcut komutların tamamı bu yüzden ASCII yazılmış ve
+`report` komutunun tek başına farklı davranması tutarsızlık olurdu.
+
+---
+
+## `report` komutu, zincir geçersizse çıkış kodu 1 döndürüyor
+
+**Karar:** Rapor dosyaları başarıyla yazılmış olsa bile, `verify_chain`
+geçersiz derse komut 1 ile çıkıyor (raporun kendisi yine de üretiliyor ve
+"GEÇERSİZ" göstergesiyle diske yazılıyor).
+
+**Gerekçe:** `verify-custody` komutu zaten aynısını yapıyor; bir betikte
+`triagechain report && ...` yazan kişinin kırık bir zinciri "başarılı" olarak
+görmesi kabul edilemez. Kırık zincir raporu üretmeyi engellemiyor — tam tersine
+raporun en önemli çıktısı o durumu **göstermek**.
+
+---
+
+## Manifest yolları tek yerde: `resolve_routing_manifest_path` + `resolve_report_path`
+
+**Karar:** `cli/main.py`'nin `_cmd_route`'u içinde inline hesaplanan
+`routing_manifest.json` yolu `config/loader.py`'ye taşındı; rapor dosyalarının
+yolu için de aynı desende `resolve_report_path` eklendi (HTML ve `.sha256`
+yan dosyası bu yoldan türetiliyor).
+
+**Gerekçe:** Diğer üç yol (`manifest.json`, `custody.jsonl`,
+`detection_manifest.json`) zaten loader'da tek kaynaktan türetiliyordu; dördüncüsü
+CLI'de kalmıştı ve rapor katmanı aynı yolu ikinci kez hesaplamak zorunda
+kalacaktı — iki tarafın ayrışması an meselesiydi. Bu, Faz 5'in kapsamı dışında
+küçük ama gerekli bir tutarlılık düzeltmesi olarak kullanıcı tarafından da
+açıkça istendi.
+
+---
+
+## RECmd'in `--bn` toplu dosyası: kullanıcıdan yol istemek yerine standart bir dosya GÖMÜLDÜ
+
+**Karar:** RECmd'in zorunlu kıldığı `--bn <toplu dosya>` argümanı,
+`EricZimmerman/RECmd` deposundaki MIT lisanslı `DFIRBatch.reb` dosyasının
+belirli bir sürüme **sabitlenmiş (pinned)** bir kopyası pakete gömülerek
+karşılandı (`router/catalog/recmd_batch/DFIRBatch.reb`). Config'de
+`router.recmd_batch_file` alanı da eklendi ama bu bir **override**;
+boş bırakılırsa gömülü dosya kullanılıyor.
+
+**Gerekçe:** `docs/hatalar_ve_sonuclar.md`'de bu, "kullanıcıdan config'de bir
+yol mu istensin, yoksa kendi minimal `.reb`'imizi mi yazalım" şeklinde açık
+bir soru olarak duruyordu; üçüncü bir seçenek daha iyi çıktı. (a) Kullanıcıdan
+yol istemek, aracın "kutudan çıkar çıkmaz çalışması"nı bozardı — RECmd kurulu
+olsa bile toplu dosyanın yolu ayrıca yazılmadan registry hiç ayrıştırılamazdı.
+(b) Kendi minimal `.reb`'imizi yazmak, topluluk tarafından bakımı yapılan,
+KAPE'nin kendisinin de kullandığı bir standardın yerine bizim uydurduğumuz,
+denetlenmemiş ve eksik bir kural setini koymak olurdu — adli bir çıktının
+"hangi metodolojiyle üretildiği" sorusuna verilecek en zayıf cevap budur.
+(c) Standart dosyayı gömmek ikisinin de sorununu çözüyor: varsayılan hâliyle
+çalışıyor, kullanılan kural seti tanınmış/denetlenebilir bir standart, ve
+kendi kural setini kullanmak isteyen incelemeci config'den override
+edebiliyor.
+
+**Sürüm sabitleme:** RECmd'in kendi `--sync` bayrağı gibi "her koşuda en
+güncelini indir" davranışı BİLEREK kullanılmadı — aynı vaka farklı zamanlarda
+çalıştırıldığında farklı kural setiyle farklı sonuç üretirdi, bu doğrudan
+tekrarlanabilirliği (reproducibility) bozar. Kaynak, sürüm, git commit ve
+SHA-256 bilgisi `recmd_batch/PROVENANCE.md`'de duruyor.
+
+**Alternatif (kullanılmadı):** `--bn` yerine RECmd'in kabul ettiği diğer
+anahtarlardan biri (`--sa`/`--sk` gibi tekil arama bayrakları) — ama onlar
+"belirli bir anahtarı ara" içindir, triaj amaçlı toplu çıkarma yapmaz.
+
+---
+
+## `{batch_file}` yer tutucusuna ARAÇ ADINA göre değil, ŞABLONA göre karar veriliyor
+
+**Karar:** `router/runner.py`, toplu dosyanın gerekip gerekmediğine
+`route.tool == "recmd"` diye bakarak değil, rotanın `args` şablonunda
+`{batch_file}` yer tutucusunun geçip geçmediğine bakarak karar veriyor.
+
+**Gerekçe:** Yönlendirme eşlemesinin kod değil veri olması bu projenin
+kurulu bir deseni (`tool_mapping.yaml`); "hangi araç toplu dosya ister"
+bilgisi de o zaman kodda değil, aynı veri dosyasında durmalı. İki yaklaşım
+bugün birebir aynı davranıyor (yalnızca RECmd rotalarında bu yer tutucu var,
+bir test bunu kilitliyor) ama ileride benzer bir "kural dosyası" isteyen
+başka bir araç eklenirse Python'a dokunmak gerekmeyecek. Maliyeti de yok:
+tek bir satır, `route.tool == "recmd"` ile aynı uzunlukta.
+
+**Not:** `str.format`'a her rota için `batch_file=` anahtarı veriliyor;
+şablonda kullanılmayan bir keyword argümanı Python'da zaten hata üretmez, bu
+yüzden diğer araçların şablonları için ayrı bir dal gerekmedi.
+
+---
+
+## Toplu dosyanın varlığı config yüklerken değil, KOŞU anında kontrol ediliyor
+
+**Karar:** `router.recmd_batch_file` pydantic'te yalnızca **mutlak yol**
+olduğu için doğrulanıyor (ve yalnızca değer verilmişse — `None` her zaman
+geçerli); dosyanın diskte var olup olmadığına router çalışırken bakılıyor ve
+yoksa bu ölümcül değil, `processing_skipped` ("RECmd toplu dosyasi
+bulunamadi: <yol>") oluyor.
+
+**Gerekçe:** `router.tools` ve `detection.hayabusa_path`/`rules_dir` zaten
+tam olarak bu deseni kullanıyor: kullanıcı araçları kurmadan önce
+konfigürasyonu yazmış olabilir, config'in kendisi bu yüzden dosya sisteminin
+o anki hâline bağlı olmamalı. Ayrıca bir toplu dosyanın bulunamaması tüm
+triaj koşusunu düşürmek için çok küçük bir sebep — registry atlanır, MFT ve
+olay günlükleri işlenmeye devam eder ve atlamanın **nedeni** deftere yazılır.
+
+---
+
+## Kural seti parmak izi: içerik hash'i değil, YAPI + BOYUT hash'i (bilinçli tradeoff)
+
+**Karar:** `detection_started` custody olayına eklenen
+`rules_fingerprint_sha256`, kural klasöründeki dosyaların **içeriklerinden**
+değil, `(göreli yol, boyut)` çiftlerinin sıralı listesinden hesaplanıyor
+(`rules_file_count` ile birlikte).
+
+**Gerekçe:** Amaç, "bu bulguyu tam olarak hangi kural seti üretti" sorusuna
+custody defterinden cevap verebilmek. Router tarafındaki toplu dosya TEK bir
+dosya olduğu için doğrudan `hash_file()` ile hash'lenebiliyor, ama Hayabusa'nın
+`rules/` klasörü binlerce Sigma kuralı içerir — her koşuda hepsinin içeriğini
+okuyup hash'lemek, tespit koşusunun kendisine oranla anlamsız bir maliyet
+eklerdi (ve bu maliyet her `.evtx` için değil, koşu başına bir kez bile olsa
+kural sayısıyla birlikte büyür).
+
+**Kabul edilen sınırlama:** Dosya EKLENMESİ, ÇIKARILMASI, yeniden
+adlandırılması ve BOYUT değişikliği yakalanır; bir kural dosyasının içeriği
+**aynı boyutta kalacak şekilde** değiştirilirse bu parmak izi bunu YAKALAMAZ.
+Bu, gizlemeye çalışan bir saldırgana karşı bir garanti değil; "kural setim
+bu koşudan sonra güncellendi mi / aynı setle mi çalıştım" sorusuna cevap veren
+operasyonel bir kayıttır. Sınırlama koda, `docs/chain_of_custody.md`'ye ve bir
+testin adına açıkça yazıldı — sessizce "hash var" izlenimi bırakmamak için.
+
+**Alternatif (kullanılmadı):** Tüm kural dosyalarının içeriğini hash'leyip
+birleştirmek (Merkle benzeri) — kesin olurdu ama koşu başına binlerce dosya
+okuma demekti. İleride gerekirse bu, ayrı ve isteğe bağlı bir "tam parmak izi"
+modu olarak eklenebilir; şemayı bozmaz çünkü alan adı zaten
+`rules_fingerprint_sha256`.
+
+---
+
+## Yeni custody alanları eklendi, hiçbir mevcut alan değiştirilmedi
+
+**Karar:** `artifact_processed` olayına `recmd_batch_path`/
+`recmd_batch_sha256`, `detection_started` olayına `rules_dir`/
+`rules_file_count`/`rules_fingerprint_sha256` **eklendi**; iki olayın da
+mevcut anahtarlarına dokunulmadı. RECmd dışındaki araçlarda (mftecmd,
+evtxecmd, pecmd) toplu dosya alanları hiç yazılmıyor; kural klasörü tanımsız
+ya da diskte yoksa parmak izi alanları da hiç yazılmıyor.
+
+**Gerekçe:** Defter geriye dönük uyumlu kalmalı: eski bir vakanın defterini
+okuyan bir kod, yeni alanları görmese de çalışabilmeli; yeni bir defteri
+okuyan eski bir kod da beklediği alanları bulabilmeli. "Alan var ama değeri
+uydurma" (örneğin kural klasörü yokken `rules_file_count: 0` yazmak) bilinçli
+olarak seçilmedi — 0 kurallı bir klasörle hiç kontrol edilememiş bir klasör
+adli açıdan aynı şey değildir; ikincisinde alanın hiç olmaması, koşunun neden
+atlandığını zaten söyleyen `detection_skipped` olayıyla birlikte daha dürüst
+bir kayıt oluyor.
+
+---
+
+## Gömülü `.reb` dosyası `pyproject.toml`'da paket verisi olarak listelendi
+
+**Karar:** `[tool.setuptools.package-data]` altındaki
+`"triagechain.router.catalog"` girdisi `["*.yaml", "recmd_batch/*.reb",
+"recmd_batch/*.md"]` olarak genişletildi.
+
+**Gerekçe:** `recmd_batch/` bir Python paketi değil (içinde `__init__.py`
+yok), dolayısıyla `packages.find` onu bulmaz ve varsayılan hâliyle kurulan
+pakete `.reb` dosyası HİÇ kopyalanmazdı — geliştirme ağacında (`pip install
+-e`) çalışan kod, gerçek bir kurulumda "toplu dosya bulunamadi" diyerek her
+registry kovanını atlardı. Katalog YAML'leri için zaten aynı gerekçeyle
+yazılmış bir yorum vardı, aynı desen takip edildi.
+
+---
+
+## VSS artık `pywin32` (WMI COM) ile — kullanıcı onaylı, bilinçli bir bağımlılık istisnası
+
+**Karar:** `collection/vss_snapshot.py`, golge kopyayı `subprocess` +
+`powershell.exe` + metin ayrıştırma ile değil, `pywin32`'nin
+`win32com.client` modülüyle **doğrudan** WMI çağırarak oluşturuyor
+(`Win32_ShadowCopy.Create`) ve siliyor (WMI örneğinin kendi `Delete_()`
+metodu). `pyproject.toml`'a `"pywin32>=306; sys_platform == 'win32'"` eklendi;
+`parse_create_output`, `_build_create_script` ve `_KV_PATTERN` silindi.
+
+**Bu, kullanıcının AÇIKÇA ONAYLADIĞI bilinçli bir bağımlılık istisnasıdır.**
+Yukarıdaki iki eski karar ("VSS erişimi: `pywin32`/COM yerine `vssadmin`
+subprocess çağrısı" ve "VSS oluşturma yolu `vssadmin`'den WMI'ye taşındı")
+ile çelişmiyor: o kararların dayanağı kullanıcının genel "bağımlılıktan
+kaçınalım" tercihiydi ve o tercih projenin geri kalanı için hâlâ geçerli —
+kullanıcı `pywin32`'yi SADECE bu tek nokta için, gerekçesini görüp
+onaylayarak istisna kıldı.
+
+**Gerekçe:** (1) Metin ayrıştırma kırılganlığı tamamen ortadan kalkıyor —
+`powershell.exe`'nin ürettiği `ANAHTAR=deger` satırlarını regex ile okumak
+yerine WMI'nin zaten yapılandırılmış nesneleri (`Properties_("ShadowID").Value`)
+doğrudan kullanılıyor; ayrıştırılacak bir metin yok, dolayısıyla bozulacak bir
+ayrıştırıcı da yok. (2) Golge kopya başına fazladan bir süreç
+(`powershell.exe`) başlatmaya gerek kalmıyor — adli bir toplama sırasında
+hedef sistemde çalıştırılan program sayısı azalıyor. (3) Kod deseninin
+kendisi, kullanıcının gerçek makinesinde, gerçek Yönetici (UAC) yetkisiyle,
+kod yazılmadan ÖNCE elle doğrulandı (gerçek gölge kopya oluşturuldu, gerçek
+dosya okundu, temizlendi, kalıntı kalmadı) — yani bu sefer varsayımla değil,
+doğrulanmış bir desenle başlandı.
+
+**Alternatif (kullanılmadı):** `powershell.exe` + `ANAHTAR=deger` çözümünde
+kalmak — sıfır bağımlılık avantajını korurdu ama yukarıdaki iki kırılganlığı
+da korurdu; kullanıcı bu tradeoff'u görüp bağımlılığı tercih etti.
+
+**Uygulama detayları:**
+- `import win32com.client` modül seviyesinde `try/except ImportError` ile
+  sarıldı: pywin32 kurulu olmadığında (CI'daki Linux) modülün KENDİSİ import
+  edilebilir kalıyor, hata ancak `VssSnapshot` gerçekten kullanılmaya
+  çalışıldığında (`__enter__`) veriliyor.
+- `pyproject.toml`'daki platform işaretleyicisi (`sys_platform == 'win32'`)
+  ŞART: CI `ubuntu-latest` üzerinde çalışıyor ve pywin32'nin Linux wheel'i yok,
+  işaretleyici olmadan `pip install -e .[dev]` orada çökerdi.
+- Ham COM istisnaları (`pywintypes.com_error` dâhil) dışarı sızmıyor; geniş bir
+  `except Exception` ile yakalanıp `CollectionError`'a sarılıyor — COM
+  hatalarının kesin tipini önceden bilmek güç olduğu için bilinçli olarak geniş
+  tutuldu.
+- `VssSnapshot`'ın PUBLIC arayüzü (`__init__(volume, timeout)`, `translate()`,
+  context manager protokolü) hiç değişmedi, bu yüzden `collection/collector.py`
+  ve `collection/readers.py`'ye dokunulmadı.
+- `timeout` parametresi imzada kaldı ama artık kullanılmıyor (WMI çağrıları
+  senkron ve yerel); gerçek bir zaman aşımı mekanizması yok, bu bilinen sınırlama
+  koda, `docs/architecture.md`'ye ve roadmap'e yazıldı.
+- Testler gerçek pywin32'ye DAYANMIYOR: `sys.modules`'a sahte bir
+  `win32com.client` enjekte edilip modül yeniden yükleniyor, böylece aynı
+  testler hem bu Windows makinesinde hem de pywin32'siz Linux CI'da çalışıyor
+  (pywin32'yi bloke eden bir simülasyonla ayrıca doğrulandı).
+
+---
+
+## Profesyonel arayüz için `PySide6`'ya geçildi; chameleon'un UI kit deseni uyarlandı (kopyalanmadı)
+
+**Karar:** Yeni `src/triagechain/gui_qt/` paketi (`theme.py`, `widgets.py`,
+`main_window.py`, `app.py`) `PySide6` ile yazıldı ve `triagechain-gui`
+konsol komutu artık bunu açıyor. Eski `tkinter` arayüzü
+(`src/triagechain/gui/app.py`) **silinmedi**, sadece komuta bağlı değil.
+Mimari desen, kullanıcının chameleon projesindeki
+`shared/ui_kit/{theme_qt,widgets}.py` + `launcher/chameleon_gui.py`
+üçlüsünden alındı: renk/tipografi/boşluk sabitleri TEK dosyada, bileşenler
+(`Card`, `PrimaryButton`, `SecondaryButton`, `Input`, `MonoInput`,
+`MonoLabel`, `StatusBadge`, `ProgressBar`) bu sabitlerden türeyen kendi
+QSS'lerini kuruyor, ekran ise solda sabit sidebar + sağda `QStackedWidget`.
+Kod **kopyalanmadı**; sınıf isimleri/API'si aynı, renk kimliği (yeşil)
+TriageChain'e ait.
+
+**Gerekçe:** "Basit çalıştırma arayüzü için `tkinter` seçildi" kararı zaten
+"profesyonel tasarım aşamasına geçildiğinde bu karar yeniden
+değerlendirilebilir, ama bu YENİ bir karar/onay gerektirir" diyordu — o
+aşamaya gelindi ve kullanıcı gerçek, tek pencereli bir masaüstü uygulaması
+istedi. Sıfırdan bir tasarım sistemi kurmak yerine, kullanıcının kendi
+projesinde zaten olgunlaşmış ve erişilebilirlik denetiminden geçmiş bir
+deseni uyarlamak hem daha az kod hem daha az hata demekti.
+
+**Bağımlılık:** `pyproject.toml`'a `PySide6>=6.7` eklendi — `pywin32`'nin
+aksine platform işaretleyicisi GEREKMİYOR, PySide6'nın Linux/macOS/Windows
+wheel'leri var ve CI (`ubuntu-latest`) üzerinde sorunsuz kuruluyor.
+
+**Alternatif (kullanılmadı):** Mevcut `tkinter` arayüzüne dört butonu daha
+eklemek — roadmap'te "karar bekleniyor" olarak duran seçenek buydu. Daha az
+iş olurdu ama kullanıcının istediği şey buton sayısı değil, gerçek bir
+uygulama hissiydi (sidebar, canlı gösterge kartları, delil zinciri tablosu);
+`tkinter` ile bunu tutarlı biçimde yapmak PySide6'dan daha çok, daha
+kırılgan kod demekti.
+
+---
+
+## Arayüz kendi iş mantığını YAZMIYOR: var olan fonksiyonları çağırıp diski yeniden okuyor
+
+**Karar:** Dashboard'daki dört aksiyon (`_action_collect/route/detect/report`)
+CLI'nin `_cmd_*` fonksiyonlarıyla aynı akışı izliyor ama onların kopyası
+değil: doğrudan `run_collection` / `run_router` / `run_detection` /
+`build_report`+`write_report` çağrılıyor, yollar `config/loader.py`'nin
+`resolve_*` fonksiyonlarından alınıyor. Metrik kartları ve defter tablosu
+ise hiçbir sayıyı bellekte tutmuyor — her koşudan sonra `read_snapshot()`
+diskteki `manifest.json` / `routing_manifest.json` /
+`detection_manifest.json` / `custody.jsonl` dosyalarını **yeniden okuyor**.
+
+**Gerekçe:** Adli bir araçta ekranda görünen sayı ile diskteki delilin
+ayrışması kabul edilemez. Arayüz kendi sayacını tutsaydı, dosya dışarıdan
+değiştiğinde (ya da bir koşu yarıda kaldığında) ekran gerçeği değil kendi
+hafızasını gösterirdi. Diski tek kaynak kabul etmek ayrıca "GUI iş mantığını
+duplicate etmesin" kuralını kendiliğinden sağlıyor.
+
+**Sonuç/sınır:** Zincir durumu için `verify_chain` tüm zincire bakıp İLK
+kırılmayı bildiriyor; tabloda per-event doğrulama YAPILMIYOR — zincir
+geçerliyse tüm satırlar "Doğrulandı", değilse kırılma noktasından
+sonrakiler "Şüpheli" gösteriliyor. Defter büyükse yalnızca son 50 olay
+tabloya yazılıyor (üstte "toplam N olay, son 50 gösteriliyor" notuyla).
+
+---
+
+## Kontrast hesabı önerilen iki tokeni değiştirdi: `BORDER` düzeltildi, `ACCENT_TEXT` düzeltilmesi GEREKMEDİ
+
+**Karar:** HTML maketinden gelen palet iki noktada ölçülüp güncellendi:
+`BORDER` `#454C56` → **`#6A727E`**, `PrimaryButton`'ın yazı rengi ise
+chameleon'daki gibi beyaz değil **`BG_DARKEST` (`#0D1117`)**. Buna karşılık
+`ACCENT_TEXT` chameleon'daki gibi ayrı/açık bir tona **kaydırılmadı**,
+`ACCENT` ile aynı (`#3FB950`) bırakıldı.
+
+**Ölçümler (WCAG 2.1, bu palet üzerinde hesaplandı):**
+- `#454C56` / `BG_LAYER2` = **1.82:1** — UI bileşeni sınırı için gereken
+  3:1'in çok altında (chameleon'un erişilebilirlik denetiminde öğrendiği
+  aynı ders: input alanının nerede başladığı düşük görüşle seçilemiyor).
+  `#6A727E` / `BG_LAYER2` = **3.24:1** → geçiyor.
+- `ACCENT` (`#3FB950`) / `BG_DARKEST` = **7.45:1**, / `BG_SURFACE` =
+  **6.81:1** — küçük metin için AA (4.5:1) zaten fazlasıyla geçiliyor. Yeşil,
+  chameleon'un mavisinden (`#2563EB`, `BG_SURFACE`'te 3.35:1) çok daha
+  parlak olduğu için ayrı bir "metin tonu" gerekmedi. Token yine de ayrı
+  duruyor (kullanım yerleri chameleon'la aynı kalsın diye), sadece değeri
+  `ACCENT` ile aynı.
+- Beyaz metin / `ACCENT` dolgu = **2.54:1** — okunmuyor. `BG_DARKEST` metin /
+  `ACCENT` dolgu = **7.45:1**. Bu yüzden birincil butonun yazısı ve odak
+  halkası koyu; chameleon'da beyaz olmasının sebebi orada dolgunun KOYU bir
+  mavi olmasıydı, aynı kural farklı renkte ters sonuç veriyor.
+
+**Gerekçe:** Bir tasarım sistemini "uyarlamak", renk değerlerini olduğu gibi
+taşımak değil, o sistemin KURALINI (her token kendi zeminine karşı ölçülür)
+taşımaktır. Ölçüm yapılmasaydı iki hata da sessizce projeye girecekti.
+
+---
+
+## Tek tema (koyu): `set_mode()`/`get_mode()` ikilisi bilinçli olarak alınmadı
+
+**Karar:** `gui_qt/theme.py` chameleon'un `theme_qt.py`'sinden farklı olarak
+tek bir (koyu) palet tutuyor; `DARK`/`LIGHT` sözlükleri, `set_mode()` ve
+`get_mode()` yok.
+
+**Gerekçe:** Kullanıcının onayladığı HTML maketi bunu açıkça yazıyordu:
+"Kasıtlı olarak tek-tema (koyu) bir kimlik — GitHub/Vercel tarzı geliştirici
+araçlarında olduğu gibi bu ürün her zaman koyu temayla açılır." İkinci bir
+palet + tema anahtarı eklemek, hiçbir ekranın çağırmadığı ölü bir esneklik
+olurdu (projenin "spekülatif kod yazma" kuralı). Açık tema gerçekten
+istenirse chameleon'daki `globals().update()` deseni birebir eklenebilir —
+bu, kod yapısını değiştirmeyen bir ekleme; dosyanın başına bu not yazıldı.
+
+---
+
+## Metrik/olay ikonları gerçek SVG'den — Unicode glif kullanılmadı
+
+**Karar:** İlk yazılan sürümde metrik kartlarının ikonları (▤/◷/⚠ gibi)
+düz Unicode glif karakterleriydi. Bunları, chameleon'un `shared/ui_kit/
+icons.py`'sinden birebir uyarlanmış bir `gui_qt/icons.py` yükleyicisiyle
+gerçek SVG dosyalarına (`gui_qt/assets/icons/*.svg`, elle çizilmiş, HTML
+maketindeki ikonlarla aynı basit stroke şekilleri) çevirdim.
+
+**Gerekçe:** Bu proje chameleon'un TAM OLARAK aynı dersini
+(`docs/ogrenilenler.md` → "Qt QListWidgetItem'da emoji yerine SVG ikon
+kullan") tekrar keşfetmesin diye — glif/emoji ikonlar headless ya da bazı
+ortamlarda kutu (tofu) olarak render olabiliyor, sistemin renkli emoji
+fontuna düşme garantisi yok. Ayrıca kullanıcı HTML maketi "referans al, öyle
+dursun" dediği için maketin gerçek SVG ikon kullanan görsel dilini burada da
+uygulamak doğruydu, sadece renk paleti değil.
+
+**Sonuç:** Aynı fırsatta gözetim zinciri tablosundaki olay hücrelerini de
+(düz metin yerine) ikon + kalın olay adı + soluk detay alt satırı şeklinde
+HTML maketteki `.event-cell` yapısına uyarlandı; vaka kimliği de artık çıplak
+bir etiket değil, kenarlıklı/dolgulu bir "AKTİF VAKA" kutusu (HTML'deki
+`.case-pill`). Tablo hücresi artık `QTableWidgetItem` değil özel bir widget
+olduğu için, ona bağlı test (`test_gui_qt.py`) da `cellWidget(...).
+findChild(QLabel, "event_name")` okuyacak şekilde güncellendi. Tüm paket
+(88 test) yeşil.
+
+---
+
+## Metrik kartlarına sparkline + delta metni eklendi — veri UYDURULMADI, gerçek diskten türetildi
+
+**Karar:** Kullanıcı HTML maketi bir ekran görüntüsüyle tekrar gösterip
+"görsel olarak birebir bunu istiyorum" dedi — maketteki sparkline'lar ve
+delta metinleri ("+18 bu vakada", "2 yüksek önem" gibi) ilk Qt sürümünde
+kasıtlı olarak atlanmıştı ("bu turda gerekmiyor, gerçek zaman serisi verisi
+yok" gerekçesiyle). Bu istek üzerine `widgets.Sparkline` (QPainter ile
+çizilen, alan dolgulu mini çizgi grafiği) eklendi ve üç karta da gerçek
+veriden türetilmiş bir eğri + delta metni bağlandı:
+
+- **Toplanan Dosya Sayısı**: eğri = `manifest.artifacts`'in kendi sırasındaki
+  kümülatif sayım (1, 2, 3, ... — gerçekten "N. dosyaya kadar kaç dosya
+  toplandı" sorusunun cevabı); delta = hata varsa "N artefakt alınamadı",
+  yoksa "tümü doğrulandı".
+- **Şüpheli Bulgu Sayısı**: eğri = bulguların keşfedilme sırasındaki kümülatif
+  sayımı; delta = `Finding.level` alanı "high"/"critical" olanların sayısı
+  ("2 yüksek önem" gibi) — maketteki metnin BİREBİR karşılığı, ama gerçek.
+- **İşlem Süresi**: eğri = tamamlanmış her fazın (toplama/yönlendirme/tarama)
+  kendi süresi (saniye); delta = hangi fazların bittiği ("toplama+tarama").
+
+**Gerekçe:** `artifact-design` ilkesi ("örnek satırlar her zaman öyle
+işaretlenir, kullanıcının kendi verisi gibi asla sunulmaz") ile kullanıcının
+"birebir görsel" isteği arasında bir gerilim vardı. Çözüm ikisini de
+karşılıyor: görsel dil (sparkline'ın kendisi, delta metninin konumu/rengi)
+maketle birebir aynı, ama İÇERİK asla uydurulmadı — her sayı gerçek bir
+manifest/bulgu listesinden hesaplanıyor. 2'den az nokta olduğunda (ör. tek
+bir bulgu, ya da vaka hiç yüklenmemiş) `Sparkline` sahte bir eğri UYDURMAK
+yerine düz, nötr bir çizgi çiziyor — bkz. `Sparkline`'ın kendi docstring'i.
+
+**Alternatif (kullanılmadı):** Maketteki gibi süslü/rastgele örnek eğriler
+göstermek — kullanıcının kendi vakasıyla hiçbir ilgisi olmayan sahte veri,
+projenin "gerçek veri okunur, hiçbir sayı arayüzde ayrıca uydurulmaz"
+ilkesini (bkz. `main_window.py`'nin dosya başı docstring'i) doğrudan ihlal
+ederdi.
+
+**Sonuç:** `read_snapshot()`'a üç yeni alan çifti (`*_trend`/`*_delta`)
+eklendi, mevcut testlere gerçek sahte-vaka fixture'ından beklenen
+değerleri (`[1,2,3]`, `"tümü doğrulandı"`, `[125.0, 60.0]`,
+`"toplama+tarama"` vb.) doğrulayan yeni assertion'lar eklendi. Tüm paket
+(88 test) yeşil.
+
+---
+
+## Chainsaw: Hayabusa'dan BAĞIMSIZ ikinci bir Sigma motoru, AYNI kural setiyle
+
+**Karar:** Roadmap'in "Hayabusa ile çapraz doğrulama" wishlist maddesi için
+gerçek Chainsaw (v2.16.5, WithSecure) BYO-subprocess entegrasyonu eklendi.
+Mimari, mevcut Hayabusa (`detection/runner.py`) deseninin BİREBİR aynısı:
+YAML katalog (`chainsaw_args.yaml`) argv şablonu tanımlıyor, config'de
+`chainsaw_path`/`chainsaw_mapping_file`/`chainsaw_timeout_seconds` alanları
+var, `chainsaw-scan` CLI komutu ayrı bir `chainsaw_manifest.json` yazıyor.
+En önemli mimari karar: Chainsaw, Hayabusa'nın kendi `chainsaw_rules_dir`'i
+DEĞİL, config'deki `detection.rules_dir` alanını AYNEN paylaşıyor — çünkü
+amaç "iki motor iki farklı kural setiyle ne buluyor" değil, "iki BAĞIMSIZ
+motor AYNI kural setiyle aynı sonuca varıyor mu" sorusunu cevaplamak.
+Bu paylaşım sayesinde `detection/correlation.py::correlate_sigma_engines()`
+`(source_path, rule_title)` eşitliğini gerçek bir çapraz doğrulama sinyali
+olarak kullanabiliyor (bkz. o fonksiyonun docstring'i).
+
+Veri modeli tarafında Chainsaw için YENİ bir şema İCAT EDİLMEDİ: gerçek
+Chainsaw JSON çıktısı incelendiğinde (EVTX-ATTACK-SAMPLES + SigmaHQ ile
+gerçek bir tarama çalıştırılarak) alanların Hayabusa'nın ürettiği
+`Finding`/`DetectionManifest` şemasına birebir oturduğu görüldü — bu yüzden
+`reporting/models.py::Report.chainsaw` alanı `Optional[DetectionSummary]`
+(Hayabusa'nın `report.detection`'ıyla AYNI tip). Bu sayede rapor katmanında
+(`builder.py::_sigma_engine_summary`, `renderer.py::_sigma_engine_section`)
+iki motor için tek bir ortak fonksiyon yeterli oldu — kopya kod yazılmadı.
+
+**Gerekçe:** Tek bir Sigma motorunun ("Hayabusa dedi ki...") bulguları
+kendi başına ne kadar güvenilir olduğu tartışmalı olabilir (kural yanlış
+yapılandırılmış, motor kendi hatası vb.). İki bağımsız motorun AYNI kuralı
+AYNI dosyada bulması, tek motora göre çok daha güçlü bir sinyal — adli
+bilişimde "çapraz doğrulama" prensibinin doğrudan karşılığı. Chainsaw
+Rust'la yazılmış, Hayabusa Rust'la yazılmış ama farklı bir kod tabanı ve
+farklı bir Sigma-yorumlayıcı implementasyonu kullanıyor; bu da onları
+GERÇEKTEN bağımsız kılıyor (aynı motorun iki kopyası değil).
+
+YARA kural setleri gibi (Yara-Rules/rules, GPLv2) Chainsaw'ın kendi ikili
+dosyası ve varsayılan kuralları da REPO'YA VENDOR EDİLMEDİ — proje zaten
+"araç dağıtılmaz, sadece kullanıcının kendi mutlak yoluyla çağrılır"
+mimarisini (Hayabusa/RECmd örneği) tutarlı şekilde sürdürüyor.
+
+**Doğrulama:** `tests/unit/test_chainsaw_runner.py` (9 test) — sahte JSON
+kaydı GERÇEK Chainsaw v2.16.5 çıktısından (EVTX-ATTACK-SAMPLES + SigmaHQ ile
+gerçek bir tarama çalıştırılıp) alındı, mock değil. `tests/unit/
+test_correlation.py`'ye `correlate_sigma_engines` için 2 test eklendi
+(ittifak VE ittifak-SAYILMAZ durumları). `reporting/builder.py` ve
+`reporting/renderer.py`'ye Chainsaw özeti + "Motor ittifakı (Hayabusa +
+Chainsaw)" HTML bölümü eklendi, `tests/unit/test_report_builder.py`'ye 2
+yeni test (`test_chainsaw_present_and_agrees_with_hayabusa`,
+`test_chainsaw_without_hayabusa_has_no_engine_agreement`) + mevcut 3 testin
+"henüz çalıştırılmadı" sayaç beklentisi Chainsaw'ın yeni boş-durum mesajını
+da sayacak şekilde güncellendi. Tüm paket (149 test) yeşil.
+
+---
+
+## Yönetici Raporu risk kuralı Chainsaw'ı ve motor ittifakını da sayıyor
+
+**Karar:** `reporting/executive.py::assess_risk()` artık `report.detection`
+(Hayabusa) ile birlikte `report.chainsaw`'ı da tarıyor (high/critical bulgu
+sayımı ve toplam bulgu sayımı için `for summary in (detection, chainsaw)`
+döngüsü) ve `report.engine_agreements` (Hayabusa+Chainsaw ittifakı) dolu
+ise -- `report.correlated_artifacts` (Sigma+YARA korelasyonu) ile AYNI
+önem sırasında -- riski doğrudan "Kritik" seviyesine çekiyor.
+`build_executive_summary()` da `finding_count`/`high_severity_count`'u iki
+motorun toplamı olarak hesaplıyor ve anlatıya (varsa) "N dosyada iki
+bağımsız davranışsal tarama motoru aynı kuralı doğruladı" cümlesini
+ekliyor; yeni `ExecutiveSummary.engine_agreement_count` alanı eklendi.
+
+**Gerekçe:** Chainsaw entegrasyonu (`##Chainsaw: ...` kararına bkz.)
+`report.chainsaw` alanını doldurmaya başladıktan sonra, risk kuralı SADECE
+Hayabusa'ya bakmaya devam etseydi -- Chainsaw tek başına (Hayabusa hiç
+çalışmamış/hata vermiş bir vakada) yüksek önemde bir bulgu bulsa bile
+Yönetici Raporu bunu "Bulgu Yok" gösterirdi. Bu, projenin "rapor gerçek
+veriden türer, hiçbir katman göz ardı edilmez" ilkesini ihlal ederdi.
+Motor ittifakının Kritik sayılması da tutarlılık için: YARA+Sigma
+korelasyonu zaten Kritik sayılıyorken, mimarisi ve gücü aynı olan
+Hayabusa+Chainsaw ittifakının daha alt bir seviyede kalması keyfi olurdu.
+
+**Not (bilinçli basitleştirme):** İki motor GERÇEKTEN aynı olayları
+bulursa (ki `rules_dir` paylaşımı bunu amaçlıyor) `finding_count` bu
+olayları İKİ KERE sayar (biri Hayabusa'dan, biri Chainsaw'dan) -- bu bir
+"çift sayım" gibi görünebilir, ama alan zaten "toplam ham bulgu sayısı"
+anlamına geliyor (YARA eşleşme sayısı da benzer şekilde Sigma'dan ayrı
+sayılıyor, hiçbir yerde tekilleştirme yapılmıyor); asıl risk KARARI zaten
+`engine_agreements`/`correlated_artifacts` üzerinden ayrı ve öncelikli
+olarak veriliyor, bu sayı sadece betimleyici metinde kullanılıyor.
+
+**Doğrulama:** `tests/unit/test_reporting_executive.py`'ye 4 yeni test
+eklendi: motor ittifakı Kritik döndürüyor mu, Chainsaw'ın TEK BAŞINA
+bulduğu yüksek/kritik bulgu Yüksek risk veriyor mu, `finding_count`/
+`high_severity_count` iki motorun toplamı mı, anlatı ittifakı doğru
+cümleyle mi ekliyor. Tüm paket (153 test) yeşil.
+
+---
+
+## Chainsaw arayüze bağlandı: Hayabusa panelinin AYNI Finding şemasını paylaşan bir ikizi
+
+**Karar:** `gui_qt/main_window.py`'ye "Chainsaw Tara" butonu (`_action_
+chainsaw_scan`, `_action_yara_scan` ile birebir aynı desen) ve Bulgular
+sayfasına "Chainsaw Bulguları" paneli eklendi. `CaseSnapshot`'a
+`chainsaw_findings`/`engine_agreements` alanları, `read_snapshot()`'a
+`chainsaw_manifest.json` okuma bloğu eklendi. Chainsaw paneli YARA
+panelinden kasıtlı olarak FARKLI bir tablo tasarımı KULLANMIYOR: Chainsaw
+Hayabusa ile AYNI `Finding` şemasını ürettiği için mevcut `_build_finding_
+cell()` hücre oluşturucusu doğrudan yeniden kullanıldı (BULGU/SEVİYE/OLAY
+ZAMANI/KAYNAK DOSYA kolonları, Bulgular sayfasındaki ana tabloyla birebir
+aynı). Motor ittifakı olan (Hayabusa + Chainsaw aynı kuralı aynı dosyada
+bulduğu) satırların kaynak-dosya hücresi vurgulanıyor — YARA panelindeki
+"Sigma+YARA korelasyonu" vurgusuyla AYNI görsel dil.
+
+**Gerekçe:** Zaten var olan `_build_finding_cell` / tablo kolon düzenini
+Chainsaw için TEKRAR YAZMAK, aynı veriyi iki farklı şekilde render eden
+bakımı zor bir kopya kod üretirdi — Chainsaw'ın kendisi de zaten "yeni şema
+icat etme, var olanı paylaş" kararıyla (bkz. yukarıdaki "Chainsaw:
+Hayabusa'dan BAĞIMSIZ..." kararı) tutarlı.
+
+**Doğrulama:** `tests/unit/test_gui_qt.py`'ye 2 yeni test eklendi
+(`test_bulgular_sayfasi_chainsaw_ve_motor_ittifaki`,
+`test_bulgular_sayfasi_chainsaw_calismamissa_bos_not_gosterir`) + mevcut 2
+teste `chainsaw_button` durumu assertion'ı eklendi. Testler `QT_QPA_
+PLATFORM=offscreen` ile gerçek Qt render'ı üzerinden (mock DOM değil)
+çalıştırıldı. Tüm paket (155 test) yeşil.
+
+---
+
+## Tüm `docs/` dosyaları Chainsaw-sonrası duruma göre yeniden tarandı ve güncellendi
+
+**Karar:** Kullanıcının "docs dosyalarının tamamını doldur" talimatı
+üzerine `architecture.md`, `chain_of_custody.md`, `ozellikler.md`,
+`ogrenilenler.md`, `hatalar_ve_sonuclar.md`, `oturum_ozeti.md`,
+`sohbet_ozeti.md`, `roadmap.md`, `config_reference.md` ve `config/
+triagechain.example.yaml` tek tek okunup güncellendi. Bulunan başlıca
+tutarsızlıklar: `architecture.md`'nin VSS bölümü hâlâ "gerçek zaman aşımı
+YOK" diyordu (roadmap'te zaten tamamlanmıştı); `chain_of_custody.md`'nin
+"Kısıt: tek yazıcı" bölümü hâlâ eski davranışı anlatıyordu (custody
+kilidi zaten eklenmişti); `ozellikler.md` YARA/Chainsaw/çoklu disk/gömülü
+font/exe'den TEK KELİME bahsetmiyordu (tamamen Faz 5 sonrası donmuş
+kalmıştı); `sohbet_ozeti.md` hâlâ "88 test, sadece Dashboard işlevsel"
+diyordu.
+
+**Gerekçe:** Bu belgeler ("neden böyle yapıldı" ve "şu an nerede
+duruyoruz" sorularının cevabı) yeni bir oturumun ya da başka bir
+geliştiricinin kod okumadan güvenip hareket edeceği kaynaklar — eskimiş
+bir "bilinen sınırlama" ya da "henüz yapılmadı" notu, ZATEN çözülmüş bir
+sorunun tekrar çözülmeye çalışılmasına ya da var olan bir özelliğin
+"eksik" sanılmasına yol açabilirdi.
+
+**Doğrulama:** Docs-only değişiklik olduğu için kod tarafı hiç
+etkilenmedi; güncelleme sonrası tam paket yine de çalıştırıldı, 155 test
+yeşil kaldı.
+
+---
+
+## capa entegrasyonu: yeni bir "supheli dosya" toplama kavramı + YARA'nın şemasını paylaşan bir yetenek analizi
+
+**Karar:** Roadmap'in "capa — PE dosyaları üzerinde otomatik davranış/
+yetenek analizi" maddesi için gerçek capa 9.4.0 (Mandiant/FLARE) BYO-
+subprocess entegrasyonu eklendi. Bunu yaparken önce bir mimari boşluk
+fark edildi: TriageChain'in toplama kataloğu (`default_targets.yaml`)
+hiçbir zaman gerçek bir PE/yürütülebilir dosya toplamıyordu (MFT, registry,
+event log, prefetch — hiçbiri "bir programın kendisi" değil), ama capa'nın
+girdisi tam olarak budur. Bu, kullanıcıya sorulması gereken "çok önemli"
+bir karar gibi görünebilirdi, ama kapsamı dar ve geri alınabilir bir
+uzantı olduğu (yeni, opsiyonel bir config alanı) ve projenin "roadmap'teki
+geliştirmeleri kendi kararlarınla yap" talimatıyla doğrudan örtüştüğü için
+kendim karar verdim:
+
+1. **`collection.suspicious_binaries: list[str]`** — analistin ELLE
+   gösterdiği şüpheli `.exe`/`.dll` dosyalarının mutlak yolları. Katalogdaki
+   diğer hedefler gibi sabit/bilinen bir konum DEĞİL — analistin kendi
+   seçtiği, vaka özelinde bir girdi. Tek bir `ResolvedTarget` (`target_id
+   ="suspicious_binary"`) altında toplanıyor (VSS gerekmez — `additional_
+   volumes`'un aksine, analistin gösterdiği dosya genelde kilitli değildir),
+   var olan `_collect_target()` AYNEN yeniden kullanıldı.
+2. **`detection/capa_runner.py`** — Hayabusa/Chainsaw/YARA ile AYNI yedi
+   güvenlik kuralını izler, ama SADECE `artifact_type_id == "suspicious_
+   binary"` olan artefaktları tarar (Hayabusa'nın "sadece event_logs"
+   kısıtıyla aynı ilke). Gerçek capa'ya karşı (notepad.exe ile) doğrulandı:
+   `-j` JSON çıktısı `{"meta":..., "rules": {<ad>: {"meta": {"namespace":
+   ..., "attack": [{"id": "T1129", ...}]}, ...}}}` şeklinde.
+3. **Veri modeli**: Finding/DetectionManifest DEĞİL, **YARA'nın YaraMatch/
+   YaraManifest şeması yeniden kullanıldı** — capa da (YARA gibi) TEK bir
+   dosyaya karşı çalışıp adlandırılmış kural eşleşmeleri üretiyor, olay-
+   tabanlı bir zaman/bilgisayar/kanal bağlamı yok. `rule_name` = capa kural
+   adı, `tags` = MITRE ATT&CK id'leri (virgülle), `meta` = `namespace=...`.
+4. **capa'nın gömülü varsayılan kural seti var** — Hayabusa/Chainsaw/
+   YARA'nın aksine `capa_rules_dir` ZORUNLU değil, sadece bir override;
+   ayarlanmışsa `-r` argümanı capa_runner.py TARAFINDAN (koşullu olduğu
+   için veri değil kod olarak) argv'nin başına eklenir.
+5. **Raporlama**: `Report.capa: Optional[YaraSummary]` (YARA ile aynı
+   sema), Uzman Raporu'na "capa tarama özeti" bölümü eklendi. **BİLEREK
+   risk hesabına (`reporting/executive.py::assess_risk`) hiç katılmıyor**
+   ve YARA/Sigma ile bir korelasyon üretmiyor: capa "yetenek" tespit eder,
+   "kötü amaçlı davranış" değil — gerçek, zararsız bir notepad.exe'de bile
+   35 capa kuralı eşleşti (link function at runtime, check if file exists,
+   query registry value gibi tamamen sıradan yetenekler). Bunu YARA/Sigma
+   eşleşmesiyle aynı ağırlıkta bir "risk sinyali" saymak yanlış olurdu.
+
+**Gerekçe:** capa'nın kendi belgeleri de bunu açıkça ayırıyor: capa bir
+BİNARYNİN NELER YAPABİLECEĞİNİ listeler (statik yetenek envanteri), bir
+Sigma/YARA kuralının aksine "bu spesifik örüntü kötü amaçlı" demez. Bu
+yüzden capa'yı deterministik risk kuralına dahil etmek, projenin "hiçbir
+şey uydurulmaz, risk gerçek sinyallerden türer" ilkesini (bkz. `executive.py`
+docstring'i) ihlal ederdi — neredeyse HER gerçek .exe'yi "riskli" gösterip
+Yönetici Raporu'nu anlamsızlaştırırdı. capa+YARA arasında bir korelasyon
+(aynı şüpheli dosyayı ikisi de işaretlerse) teknik olarak mümkündü ama
+BİLEREK EKLENMEDİ: doğru risk ağırlığını (capa'nın "yetenek" sinyali YARA'nın
+"imza" sinyaliyle aynı güçte değil) kullanıcı geri bildirimi olmadan
+kalibre etmek spekülatif olurdu — projenin "istenmeyen özellik ekleme"
+disiplinine uyularak bu açıkça ERTELENDİ (istenirse ileride eklenebilir).
+
+**Doğrulama:** `tests/unit/test_capa_runner.py` (11 test, gerçek capa
+9.4.0 JSON çıktısından alınmış `FAKE_JSON_OUTPUT` ile), `tests/
+integration/test_suspicious_binary_collection.py` (5 test, gerçek dosya
+kopyalama/hash'leme), `tests/unit/test_report_builder.py` ve `tests/unit/
+test_reporting_executive.py`'ye capa'nın rapora yansıdığını AMA risk
+seviyesini etkilemediğini kilitleyen testler eklendi, `tests/unit/
+test_gui_qt.py`'ye 2 yeni GUI testi + buton durumu assertion'ları eklendi.
+CLI'ye `capa-scan` komutu eklendi. Tüm paket (175 test) yeşil.
+
+---
+
+## Plaso/log2timeline ERTELENDİ — kullanıcı onayıyla, gerçek doğrulama imkânsız olduğu için
+
+**Karar:** Roadmap'in sıradaki maddesi Plaso/log2timeline (süper zaman
+çizelgesi) idi. Önceki dört entegrasyonda (Chainsaw, YARA, capa, ve daha
+önce Hayabusa) ısrarla uygulanan yöntem — gerçek bir ikiliyi indirip gerçek
+girdiye karşı çalıştırıp GERÇEK çıktı şeklini doğrulamak — burada denendi
+ve **gerçekten başarısız oldu**: `pip install plaso` bu ortamda
+çalıştırıldı, Plaso'nun native bağımlılıkları (`libewf-python`,
+`libfsapfs-python`, `libfvde-python` gibi libyal C uzantıları) derleme
+aşamasında "Microsoft Visual C++ 14.0 or greater is required" hatasıyla
+başarısız oldu — bu makinede bir C++ derleme araç zinciri yok. Bu, ben
+tarafımdan kod yazmadan ÖNCE gerçek bir komutla üretilmiş, taklit
+edilmemiş bir kanıt.
+
+Bu noktada kullanıcıya durum (gerçek hata çıktısıyla birlikte) sunuldu ve
+üç seçenek verildi: (1) belgelenmiş sözdizimine dayanarak DOĞRULANMAMIŞ
+şekilde kodla, (2) şimdilik atla, (3) kullanıcı kendi ortamında kurup
+doğrulasın. **Kullanıcı "ileride yapılacak olarak ayarla" dedi** — yani
+Plaso ERTELENDİ, roadmap'te "Daha sonra" bölümünde açıkça "bilinçli
+olarak ertelendi" notuyla işaretlendi.
+
+**Gerekçe:** Bu kararı kullanıcıya sormak, standart talimatın ("kendi
+kararlarını al, sadece çok önemli bir şey varsa sonraya bırak") istisnası
+olarak görüldü — çünkü bu, "hangi YAML alanı" gibi rutin bir tasarım
+tercihi değildi: Plaso'nun kendisi iki aşamalı bir boru hattı
+(`log2timeline.py` → `psort.py`) ve ağır bir native bağımlılık ayak izine
+sahip; gerçek makinede doğrulanamayan bir tahminle yazılan kod, projenin
+kendi `ogrenilenler.md`'sinde zaten kayıtlı bir dersi ("belgelenmiş bir
+CLI davranışı gerçek makinede test edilene kadar kanıtlanmış sayılmaz")
+doğrudan çiğnerdi ve önceki dört entegrasyonla TUTARSIZ bir güven
+seviyesinde bir kod tabanı bırakırdı. Kullanıcının bunu bilerek kabul
+etmesi ya da ertelemesi gerekiyordu.
+
+**Doğrulama:** Hiçbir kod yazılmadı; sadece `roadmap.md`'ye erteleme notu
+eklendi. Test sayısı (175) değişmedi.
+
+---
+
+## Uçtan uca güvenlik incelemesi: tam kod tabanı taraması, kritik/yüksek bulgu yok
+
+**Karar:** Roadmap'in aktif çekirdek maddeleri (Plaso hariç, kullanıcı
+onayıyla ertelendi) bittiğinde, standart `/security-review` skill'i
+çağrıldı ama BAŞARISIZ oldu: skill `git diff origin/HEAD...` üzerinden
+çalışıyor, ama bu depoda hiç commit yok (`git log` → "does not have any
+commits yet", remote de yok) — diff alınacak bir taban yok. Commit
+oluşturmak kendi başıma alacağım bir karar olmadığı için (kullanıcı
+"commit'leri kendi zamanında kendisi yapacak" — bkz. `sohbet_ozeti.md`),
+bunun yerine bir subagent'a TÜM `src/` ağacının elle, satır satır
+güvenlik incelemesini yaptırdım (diff değil, doğrudan kod okuma).
+
+İncelenen alanlar: her `subprocess.run` çağrı yeri (shell=True/argv
+listesi/timeout), yol içerme kontrolü (`_contained_source_path` deseninin
+TÜM beş runner'da tutarlı uygulanması), `_unique_dest`'in dosya adı
+üzerinden path traversal'a açık olup olmadığı, `yaml.safe_load`'un HER
+YAML okuma yerinde kullanılması (8 yer), config şemasındaki yol
+alanlarının mutlaklık doğrulaması (yeni eklenen `capa_rules_dir`/
+`suspicious_binaries`/`chainsaw_mapping_file` dahil), custody defteri hash
+zinciri + yeni dosya kilidi kodunun doğruluğu, GUI'de eval/exec ya da CLI'
+dan ayrı/daha az güvenli bir kod yolu olup olmadığı, HTML rapor
+render'ında HER değerin `_e()` ile kaçışlanması (stored XSS riski),
+sabit-kodlanmış sır/kimlik bilgisi taraması, `pyproject.toml` bağımlılık
+sabitlemesi, `triagechain_gui.spec` içeriği.
+
+**Sonuç: HİÇBİR onaylanmış (CONFIRMED) kritik/yüksek seviye bulgu yok.**
+İki düşük seviyeli/bilgilendirici madde:
+
+1. **Bağımlılık alt sınırları sabitlenmemiş** (`pydantic>=2` vb., üst sınır
+   yok, lockfile yok) — hijyen notu, aktif bir açık değil.
+2. **`output_dir`/`custody.log_path` mutlak olmak zorunda değil** —
+   projenin diğer TÜM yol alanlarının aksine. İncelemenin kendi
+   değerlendirmesi: bu KABUL EDİLMİŞ bir tasarım riski, kırık bir erişim
+   kontrolü DEĞİL — bu alanı besleyen tek kaynak analistin kendi yazdığı
+   güvenilir config dosyası, güven sınırını aşan bir saldırgan girdisi
+   değil. **Kod DEĞİŞTİRİLMEDİ** (davranış değişikliği + var olan config
+   dosyalarını bozma riski, gerçek bir güvenlik açığı karşılığında
+   gerekçesiz olurdu); sadece `config_reference.md`'ye bu bilinçli
+   tasarım tercihini açıklayan bir not eklendi.
+
+**Gerekçe:** Proje zaten kendi güvenlik disiplinini (BYO-araç mimarisi,
+`shell=True` yasağı, mutlak yol zorunluluğu, path containment,
+`safe_load`) baştan itibaren titizlikle uyguluyordu; bu inceleme o
+disiplinin YENİ eklenen dört motorda (Chainsaw/YARA/capa + capa'nın yeni
+`suspicious_binaries` toplama yolu) da KIRILMADAN sürdüğünü bağımsız
+olarak doğruladı.
+
+**Doğrulama:** İnceleme salt-okunur bir denetimdi, hiçbir kod
+değiştirilmedi (config_reference.md'deki tek doküman notu hariç). Test
+sayısı (175) değişmedi.
+
+---
+
+## Referans tasarımla gerçek ekran görüntüsü karşılaştırması: kritik `QApplication.setStyle("Fusion")` eksikliği bulundu ve düzeltildi
+
+**Karar:** Kullanıcı, Dashboard'un daha önce baz alınan referans ekran
+görüntüsünü tekrar gönderip "birebir aynısının tasarlanması için gerekli
+olan şeylerin tamamını araştır, eksikleri bul, tasarımı baştan yap"
+istedi. Önce `app.py`'nin gerçek kurulum mantığını (Fusion stili YOK,
+gömülü fontlar, taban QSS) birebir taklit eden bir offscreen render
+script'i yazıp gerçek `TriageChainWindow`'un GERÇEK bir ekran görüntüsünü
+aldım (referans görseldeki verilere yakın sahte bir vaka ile — 247 dosya,
+CASE-DEMO-014). Bu, "gerekli olan her şeyin araştırılması" adımının
+kendisiydi: fontlar (Inter+JetBrains Mono, gömülü), ikon seti (elle
+çizilmiş SVG çizgi ikonlar, Lucide/Feather üslubu), renk paleti
+(GitHub Primer koyu tema türevi, `#3FB950` yeşil vurgu) ve kart
+yarıçapı (14px) zaten ÖNCEKİ bir oturumda referansa göre kurulmuştu —
+**hiçbir yeni varlığın indirilmesi gerekmedi**.
+
+Gerçek ekran görüntüsünde bulunan somut fark: tüm aksiyon butonları
+(Yönlendir/Tara/YARA Tara/...) ve başlık şeridi BEYAZ/SOLUK bir arka
+planla, native Windows buton görünümüyle render oluyordu — koyu tema
+tamamen bozulmuştu. Kök neden bulundu: `app.py`, `QApplication` kurulduktan
+sonra HİÇBİR ZAMAN `app.setStyle("Fusion")` çağırmıyordu. Windows'un
+varsayılan native stili ("windowsvista"/"windows11"), ağır QSS
+temalarını (özellikle `QPushButton`in `:disabled`/hover durumlarını)
+TUTARSIZ uyguluyor — native "chrome" QSS'in ALTINDAN sızıp koyu temayı
+beyaza çeviriyordu. `app.setStyle("Fusion")`'ı `QApplication` kurulduktan
+hemen sonra, herhangi bir widget oluşturulmadan ÖNCE eklemek sorunu
+TAMAMEN çözdü (önce/sonra ekran görüntüleriyle doğrulandı).
+
+Ayrıca referans görseldeki delta metinlerinin küçük bir "~" (tilde)
+öneki taşıdığı fark edildi ("~+18 bu vakada" gibi); bu, SADECE gösterim
+katmanına (`_refresh_metrics`) eklendi — `CaseSnapshot`'taki ham
+`*_delta` metinleri değişmedi, ilgili 3 test assertion'ı yeni metne göre
+güncellendi.
+
+**Bilinçli olarak DEĞİŞTİRİLMEYEN bir fark:** Referans görsel Dashboard'da
+HİÇBİR aksiyon butonu göstermiyor (statik bir maket olduğu için buna
+ihtiyacı yok) — gerçek uygulamanın toplama/yönlendirme/tarama/rapor
+komutlarını tetikleyecek gerçek kontrollere ihtiyacı var. Butonlar
+KALDIRILMADI (kaldırmak gerçek bir işlevi yok ederdi); bunun yerine
+zaten ikincil/sade bir görsel ağırlıkta (SecondaryButton, ince kenarlık,
+dolgusuz) tasarlanmış durumdaydı, bu yeterli görüldü.
+
+Ekran görüntülerinde "TriageChain" ve "CASE-DEMO-014" etiketlerinin
+hemen yanında ince bir dikey çizgi de fark edildi; `window.findChildren()`
+ile o piksel sütununu kapsayan HİÇBİR widget bulunamadı ve
+`app.focusWidget()` ana pencerenin kendisini gösterdi (bir metin imleci
+değil) — bu, `QT_QPA_PLATFORM=offscreen` render/`grab()` boru hattına ait
+bir test-araç artefaktı olarak değerlendirildi, gerçek pencereli
+kullanımda karşılığı olmayan bir şey; kod tarafında bir değişiklik
+YAPILMADI.
+
+**Gerekçe:** `Fusion` stili eksikliği, testlerin (`.text()`/`.isEnabled()`
+kontrol eder, piksel karşılaştırması yapmaz) YAKALAYAMAYACAĞI türden bir
+hataydı — bu yüzden önceki oturumlarda fark edilmemişti. Gerçek bir ekran
+görüntüsü almak (offscreen de olsa) bu sınıf hatayı ortaya çıkarmanın TEK
+yoluydu; bu da "gerçek makinede/gerçek render'da doğrulanmadan bir şey
+kanıtlanmış sayılmaz" ilkesinin (bkz. `ogrenilenler.md`) GUI'ye uygulanmış
+hali.
+
+**Doğrulama:** `app.py`, `main_window.py`, `test_gui_qt.py` değişti; tam
+paket çalıştırıldı, 175 test yeşil (3 test yeni "~" önekli metne göre
+güncellendi). Düzeltme öncesi/sonrası GERÇEK ekran görüntüleriyle görsel
+olarak doğrulandı (`.venv`'e yalnızca bu doğrulama için geçici olarak
+kurulan `pillow`, projenin bağımlılıklarına EKLENMEDİ — sadece piksel
+karşılaştırma aracı olarak scratchpad script'inde kullanıldı).

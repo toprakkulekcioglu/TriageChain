@@ -1,0 +1,30 @@
+# capa'nin nasil cagrilacagini ve JSON ciktisinin nasil ayristirilacagini
+# tanimlar. hayabusa_args.yaml/yara_args.yaml ile ayni desen: bu bir VERI
+# dosyasidir, kod degil.
+#
+# Asagidaki sablon GERCEK bir capa 9.4.0 (resmi mandiant/capa GitHub
+# surumu, Windows derlemesi) ikilisine, gercek bir PE dosyasina (notepad.exe)
+# karsi DOGRULANDI (bkz. docs/aldigim_kararlar.md -> "capa entegrasyonu") --
+# asagidaki json_fields yollari o gercek --json ciktisindan alindi.
+#
+# capa Hayabusa/Chainsaw/YARA'dan farkli: GOMULU (embedded) bir varsayilan
+# kural setiyle kutudan ciktigi gibi calisir, kullanicinin ayrica bir kural
+# klasoru GOSTERMESI GEREKMEZ. Bu yuzden `{rules_dir}` bu sablonda YOK --
+# `detection.capa_rules_dir` ayarlanmissa `-r {rules_dir}` argumanlari
+# capa_runner.py TARAFINDAN (koşullu oldugu icin veri degil kod olarak)
+# argv'nin BASINA eklenir, taban sablon HER ZAMAN gecerlidir.
+#
+# -j (--json): sonucu JSON olarak stdout'a yaz (aksi halde okunabilir metin).
+args:
+  - "-j"
+  - "{input}"
+
+# capa ciktisinin ust seviyesi {"meta": {...}, "rules": {<kural_adi>: {...}}}.
+# Her kural girdisinin "meta" altinda: namespace, attack (MITRE ATT&CK
+# eslemeleri listesi, her biri "id" tasir), "matches" (konum listesi).
+# json_fields, bu YaraMatch-benzeri alanlarin JSON'daki nokta-ayirilmis
+# yolunu tanimlar -- "namespace" ve "attack_ids" YaraMatch.meta/tags'e,
+# capa_runner.py tarafindan (liste oldugu icin) birlestirilerek yazilir.
+json_fields:
+  namespace: "meta.namespace"
+  attack_ids: "meta.attack"

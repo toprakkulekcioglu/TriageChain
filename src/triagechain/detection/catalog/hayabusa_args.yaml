@@ -1,0 +1,55 @@
+# Hayabusa'nin nasil cagrilacagini ve ciktisinin nasil okunacagini tanimlar.
+# tool_mapping.yaml ile ayni desen: bu bir VERI dosyasidir, kod degil - cagri
+# sozdizimi degisirse Python'a dokunmadan burasi guncellenir.
+#
+# ONEMLI DERS: Hayabusa'nin CLI sozdizimi SURUMLER ARASI DEGISIYOR.
+# Kullanicinin eskiden kurulu 1.4.1 surumu ALT KOMUT kullanmiyordu (duz
+# bayraklar). Gercek GitHub release'inden indirilen guncel 4.0.0 surumu ise
+# alt komut tabanli: dogru komut "dfir-timeline" (bir onceki "csv-timeline"
+# varsayimi da yanlisti - o isim hic var olmadi, ne 1.4.1'de ne 4.0.0'da).
+# Asagidaki sablon 4.0.0'a gore, gercek `--help` ciktisiyla DOGRULANDI ve
+# gercek bir .evtx'e karsi calistirilip exit code 0 alindi (bkz.
+# docs/hatalar_ve_sonuclar.md). CSV basliklari ise bu makinedeki sakin
+# event log'larda hicbir Sigma kurali eslesmedigi icin (0 bulgu) HALA
+# dogrulanamadi - `csv_columns` asagida yine varsayim.
+#
+# -w (--no-wizard) KRITIK: bu bayrak olmadan Hayabusa etkilesimli bir
+# soru-cevap sihirbazi acmayi DENER - gozetimsiz/subprocess kullaniminda bu,
+# hicbir zaman gelmeyecek bir girdi bekleyip sonsuza kadar askida kalmak
+# demektir. `timeout=` bunu er ya da gec keser ama her tarama gereksiz yere
+# zaman asimina ugrar; -w ile sihirbaz hic acilmaz.
+
+# argv sablonu. Calistirilabilirin kendisi burada DURMAZ; onu argv'nin basina
+# tespit kosusu ekler (config'deki detection.hayabusa_path).
+# Yer tutucular: {input} taranacak .evtx, {rules_dir} Sigma kural klasoru,
+# {output_csv} yazilacak sonuc dosyasi.
+args:
+  - "dfir-timeline"
+  - "-f"
+  - "{input}"
+  - "-r"
+  - "{rules_dir}"
+  - "-o"
+  - "{output_csv}"
+  - "-w"
+  - "-Q"
+
+# Her girdi icin uretilecek CSV'nin adi; {stem} taranan dosyanin adidir.
+output_filename: "{stem}.hayabusa.csv"
+
+# CSV basliklarinin Finding alanlarina eslesmesi. Ayristirma EN IYI CABA
+# ilkesiyle yapilir: her alan icin asagidaki adaylar sirayla denenir, hicbiri
+# yoksa o alan bos kalir - bu bir hata degildir. Baslik karsilastirmasi
+# buyuk/kucuk harf ve bosluklardan bagimsizdir.
+csv_columns:
+  timestamp: ["Timestamp", "datetime", "Time"]
+  rule_title: ["RuleTitle", "Rule Title", "RuleName"]
+  level: ["Level"]
+  computer: ["Computer", "ComputerName"]
+  channel: ["Channel"]
+  event_id: ["EventID", "Event ID", "EventId"]
+  details: ["Details", "Description"]
+  # Sigma kural metadatasindaki MITRE ATT&CK etiketleri -- Hayabusa surumune
+  # gore sutun adi degisebildigi icin (bkz. dosya basindaki NOT) birden fazla
+  # aday deneniyor; hicbiri yoksa alan bos kalir, bu bir hata degildir.
+  mitre_tags: ["MitreTactics", "MitreTags", "MITRE ATT&CK", "MitreAttack"]

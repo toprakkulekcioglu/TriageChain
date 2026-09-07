@@ -1,0 +1,30 @@
+# Sanal ortamlar
+.venv/
+venv/
+env/
+
+# Python ara ciktilari
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# Paketleme
+build/
+dist/
+
+# Test ve arac onbellekleri
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Editor / isletim sistemi
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
+
+# Yerel toplama ciktilari (delil dosyalari asla depoya girmemeli)
+output/

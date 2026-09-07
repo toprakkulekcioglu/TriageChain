@@ -1,0 +1,71 @@
+# TriageChain örnek vaka konfigürasyonu
+case:
+  case_id: "CASE-2026-001"
+  operator: "j.doe"
+  description: ""
+
+collection:
+  targets:
+    - mft
+    - registry_system
+    - registry_software
+    - registry_ntuser
+    - event_logs
+    - prefetch
+  hash_algorithm: sha256
+  output_dir: "C:\\TriageChain\\output"
+  # Sistem diski disindaki birimler (ornek: veri diski D:) -- her biri icin
+  # AYRI bir golge kopya acilip SADECE o birimin $MFT'si toplanir (registry/
+  # event log/prefetch sistem kurulumuna ozgu, baska bir birimde toplanmaz).
+  # additional_volumes:
+  #   - "D:"
+  # Analistin ELLE supheli buldugu yurutulebilir(ler) -- capa'nin (asagida)
+  # girdisi. Katalogdaki diger hedefler gibi sabit bir konum DEGIL, vakaya
+  # ozgu bir yol listesi.
+  # suspicious_binaries:
+  #   - "C:\\TriageChain\\output\\supheli_ornek.exe"
+
+custody:
+  log_path: null
+
+# Ayrıştırma araçları (Eric Zimmerman araçları) TriageChain ile birlikte
+# dağıtılmaz; kendi kurduğunuz sürümlerin MUTLAK yolunu yazın. Yollar makineye
+# özel olduğu için bu bölüm bilerek yorum satırı bırakıldı — kaldırmadan
+# `triagechain route` çalışırsa her artefakt "araç konfigüre edilmemiş"
+# diyerek atlanır (hata değildir).
+# router:
+#   tools:
+#     mftecmd: "C:\\Tools\\EZTools\\MFTECmd.exe"
+#     recmd: "C:\\Tools\\EZTools\\RECmd\\RECmd.exe"
+#     evtxecmd: "C:\\Tools\\EZTools\\EvtxECmd\\EvtxECmd.exe"
+#     pecmd: "C:\\Tools\\EZTools\\PECmd.exe"
+#   timeout_seconds: 300
+
+# Sigma kural tabanlı tespit (Hayabusa) de makineye özel olduğu için bilerek
+# yorum satırı bırakıldı — kaldırmadan `triagechain detect` çalışırsa tarama
+# "araç konfigüre edilmemiş" diyerek atlanır (hata değildir).
+# detection:
+#   hayabusa_path: "C:\\Tools\\hayabusa\\hayabusa.exe"
+#   rules_dir: "C:\\Tools\\hayabusa\\rules"
+#   timeout_seconds: 600
+#   # YARA (imza tabanli statik tarama) -- kural dosyasi TriageChain ile
+#   # dagitilmaz (cogu acik kaynak kural seti kisitlayici lisansli), kendi
+#   # .yar dosyanizi yazip gosterin.
+#   yara_path: "C:\\Tools\\yara\\yara64.exe"
+#   yara_rules_file: "C:\\Tools\\yara\\rules\\benim_kurallarim.yar"
+#   yara_timeout_seconds: 300
+#   # Chainsaw -- Hayabusa'dan BAGIMSIZ ikinci bir Sigma motoru, capraz
+#   # dogrulama icin yukaridaki AYNI rules_dir'i kullanir (kendine ait bir
+#   # kural klasoru YOK). chainsaw_mapping_file, Chainsaw'in kendi
+#   # dagitimiyla gelen sigma-event-logs-all.yml gibi bir dosyadir.
+#   chainsaw_path: "C:\\Tools\\chainsaw\\chainsaw.exe"
+#   chainsaw_mapping_file: "C:\\Tools\\chainsaw\\mappings\\sigma-event-logs-all.yml"
+#   chainsaw_timeout_seconds: 600
+#   # capa -- collection.suspicious_binaries'daki dosyalarin davranis/yetenek
+#   # analizi. Gomulu bir varsayilan kural setiyle calisir, capa_rules_dir
+#   # SADECE bir override (zorunlu degil).
+#   capa_path: "C:\\Tools\\capa\\capa.exe"
+#   capa_timeout_seconds: 1800
+
+logging:
+  level: INFO

@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "triagechain"
+version = "0.1.0"
+description = "DFIR delil toplama ve chain-of-custody araci"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "TriageChain contributors" }]
+dependencies = [
+    "pydantic>=2",
+    "PyYAML>=6",
+    # Yalnizca VSS (golge kopya) icin, yalnizca Windows'ta. Platform
+    # isaretleyicisi SART: CI ubuntu-latest uzerinde calisiyor ve pywin32'nin
+    # Linux wheel'i yok, isaretleyici olmadan kurulum orada coker.
+    "pywin32>=306; sys_platform == 'win32'",
+    # Masaustu arayuzu (triagechain-gui). pywin32'nin aksine platform
+    # isaretleyicisi GEREKMIYOR: PySide6'nin Linux/macOS/Windows wheel'leri
+    # var, CI (ubuntu-latest) uzerinde sorunsuz kuruluyor.
+    "PySide6>=6.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+triagechain = "triagechain.cli.main:main"
+# Eski tkinter arayuzu (triagechain.gui.app) duruyor ama artik bu komuta
+# bagli degil; profesyonel PySide6 arayuzu onun yerini aldi.
+triagechain-gui = "triagechain.gui_qt.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# Katalog YAML'i pakete gomulu olarak dagitilmali, aksi halde
+# kurulmus pakette hedef tanimlari bulunamaz.
+[tool.setuptools.package-data]
+"triagechain.collection.catalog" = ["*.yaml"]
+# recmd_batch/ ayri bir paket degil (icinde __init__.py yok), bu yuzden
+# gomulu DFIRBatch.reb ve provenance notu router.catalog'un veri dosyasi
+# olarak listeleniyor - aksi halde kurulmus pakette --bn dosyasi bulunamaz.
+"triagechain.router.catalog" = ["*.yaml", "recmd_batch/*.reb", "recmd_batch/*.md"]
+"triagechain.detection.catalog" = ["*.yaml"]
+# assets/icons/ ve assets/fonts/ da recmd_batch/ gibi ayri bir paket degil
+# (__init__.py yok), bu yuzden gomulu SVG ikonlar + OFL lisansli TTF fontlar
+# gui_qt'nin veri dosyasi olarak listeleniyor -- unutulursa kurulmus pakette
+# theme.load_embedded_fonts() hicbir dosya bulamaz (sessizce atlar, ama
+# fontlar yine kurulu degilse yedek fonta duser).
+"triagechain.gui_qt" = [
+    "assets/icons/*.svg",
+    "assets/fonts/*.md",
+    "assets/fonts/inter/*.ttf",
+    "assets/fonts/inter/OFL.txt",
+    "assets/fonts/jetbrains_mono/*.ttf",
+    "assets/fonts/jetbrains_mono/OFL.txt",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,46 @@
+# Hangi toplama hedefinin (artifact_type_id) hangi Eric Zimmerman aracina
+# yonlendirilecegini tanimlar. Bu bir veri dosyasidir, kod degil - yeni bir
+# arac eslemesi eklemek icin Python degistirmeye gerek yok.
+#
+# 'tool' alani config'deki router.tools sozlugundeki anahtarla eslesir.
+# 'args' bir sablon listesidir; {input} toplanan dosyanin yolu, {output_dir}
+# bu artefaktin ayristirilmis ciktisinin yazilacagi dizinle degistirilir.
+#
+# RECmd ve {batch_file}: MFTECmd/EvtxECmd'nin aksine RECmd, "-f <hive> --csv
+# <dizin>" ile calismaz - hangi anahtar/degerlerin cikarilacagini AYRICA
+# ister ("One of the following switches is required: ... | --bn"). Standart
+# yol `--bn <toplu dosya>`. {batch_file} yer tutucusu, config'deki
+# router.recmd_batch_file ile ya da o bos birakilirsa pakete GOMULU
+# DFIRBatch.reb ile doldurulur. Gomulu dosya EricZimmerman/RECmd deposundan
+# gelen, MIT lisansli ve belirli bir surume SABITLENMIS (pinned) bir kopyadir
+# - kaynak/surum/SHA-256 icin bkz. recmd_batch/PROVENANCE.md. Sabitleme
+# bilincli: "en guncelini indir" davranisi ayni vakayi farkli zamanlarda
+# farkli kural setiyle calistirir, tekrarlanabilirligi bozardi.
+routes:
+  mft:
+    tool: mftecmd
+    args: ["-f", "{input}", "--csv", "{output_dir}"]
+  registry_system:
+    tool: recmd
+    args: ["-f", "{input}", "--bn", "{batch_file}", "--csv", "{output_dir}"]
+  registry_sam:
+    tool: recmd
+    args: ["-f", "{input}", "--bn", "{batch_file}", "--csv", "{output_dir}"]
+  registry_security:
+    tool: recmd
+    args: ["-f", "{input}", "--bn", "{batch_file}", "--csv", "{output_dir}"]
+  registry_software:
+    tool: recmd
+    args: ["-f", "{input}", "--bn", "{batch_file}", "--csv", "{output_dir}"]
+  registry_ntuser:
+    tool: recmd
+    args: ["-f", "{input}", "--bn", "{batch_file}", "--csv", "{output_dir}"]
+  registry_usrclass:
+    tool: recmd
+    args: ["-f", "{input}", "--bn", "{batch_file}", "--csv", "{output_dir}"]
+  event_logs:
+    tool: evtxecmd
+    args: ["-f", "{input}", "--csv", "{output_dir}"]
+  prefetch:
+    tool: pecmd
+    args: ["-f", "{input}", "--csv", "{output_dir}"]

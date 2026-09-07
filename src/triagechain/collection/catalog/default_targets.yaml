@@ -1,0 +1,99 @@
+# TriageChain varsayilan artefakt katalogu
+#
+# Buradaki yol tanimlari, kamuya acik ve acik kaynak olan
+# EricZimmerman/KapeFiles hedef tanimlariyla kavramsal olarak uyumludur:
+# yalnizca "hangi artefakt nerede durur" bilgisi kullanilmistir; KAPE'nin
+# kodu ya da KAPE.exe ikilisi bu projeye dahil DEGILDIR. Dolayisiyla
+# TriageChain'i calistirmak icin KAPE kurulumuna veya lisansina gerek yoktur.
+#
+# Alanlar:
+#   id           : konfigurasyonda kullanilan benzersiz hedef kimligi
+#   category     : kabaca gruplama (raporlama/filtreleme icin)
+#   requires_vss : dosya calisan sistemde kilitli oldugu icin Volume Shadow
+#                  Copy uzerinden okunmali mi
+#   paths        : bir veya birden fazla yol kalibi (%SystemDrive%, %WinDir%
+#                  gibi ortam degiskenleri ve '*' glob'lari desteklenir)
+#   description  : kisa aciklama
+
+targets:
+  # NOT: v0.1 yalnizca sistem diskinin ($SystemDrive) $MFT'sini alir.
+  # Birden fazla sabit diskin $MFT'sini toplamak ileriki bir is.
+  - id: mft
+    category: filesystem
+    requires_vss: true
+    paths:
+      - '%SystemDrive%\$MFT'
+    description: NTFS Master File Table; birimdeki tum dosyalarin kaydi.
+
+  # NOT: her kovanin yaninda .LOG1/.LOG2 (islem/transaction log) dosyalari da
+  # toplanir. Gercek bir makinede test edilerek bulundu: canli alinan bir
+  # kovan neredeyse her zaman "dirty" (temiz kapatilmamis) olur ve RECmd gibi
+  # araclar bu LOG dosyalari yaninda olmadan hiveyi islemeyi REDDEDER ("dirty
+  # hive" hatasi). LOG dosyalari ayni hedefin (target) altinda, kovanla AYNI
+  # cikti dizinine toplanir ki RECmd onlari otomatik bulup "replay" edebilsin
+  # (bkz. docs/hatalar_ve_sonuclar.md). Glob sifir dosyaya acilirsa hata
+  # sayilmaz (bazi kovanlarda LOG dosyasi olmayabilir).
+  - id: registry_system
+    category: registry
+    requires_vss: true
+    paths:
+      - '%WinDir%\System32\config\SYSTEM'
+      - '%WinDir%\System32\config\SYSTEM.LOG1'
+      - '%WinDir%\System32\config\SYSTEM.LOG2'
+    description: SYSTEM kovani; servisler, surucu ve baglanmis cihaz izleri.
+
+  - id: registry_sam
+    category: registry
+    requires_vss: true
+    paths:
+      - '%WinDir%\System32\config\SAM'
+      - '%WinDir%\System32\config\SAM.LOG1'
+      - '%WinDir%\System32\config\SAM.LOG2'
+    description: SAM kovani; yerel kullanici hesaplari ve oturum acma sayaclari.
+
+  - id: registry_security
+    category: registry
+    requires_vss: true
+    paths:
+      - '%WinDir%\System32\config\SECURITY'
+      - '%WinDir%\System32\config\SECURITY.LOG1'
+      - '%WinDir%\System32\config\SECURITY.LOG2'
+    description: SECURITY kovani; yerel guvenlik politikasi ve LSA sirlari.
+
+  - id: registry_software
+    category: registry
+    requires_vss: true
+    paths:
+      - '%WinDir%\System32\config\SOFTWARE'
+      - '%WinDir%\System32\config\SOFTWARE.LOG1'
+      - '%WinDir%\System32\config\SOFTWARE.LOG2'
+    description: SOFTWARE kovani; kurulu yazilimlar ve otomatik baslangic kayitlari.
+
+  # Bu iki hedef kullanici basina birden fazla dosyaya acilir.
+  - id: registry_ntuser
+    category: registry
+    requires_vss: true
+    paths:
+      - 'C:\Users\*\NTUSER.DAT'
+    description: Kullanici basina NTUSER.DAT kovani; kullanici aktivite izleri.
+
+  - id: registry_usrclass
+    category: registry
+    requires_vss: true
+    paths:
+      - 'C:\Users\*\AppData\Local\Microsoft\Windows\UsrClass.dat'
+    description: Kullanici basina UsrClass.dat; shellbag (klasor gezinme) izleri.
+
+  - id: event_logs
+    category: eventlog
+    requires_vss: false
+    paths:
+      - '%WinDir%\System32\winevt\Logs\*.evtx'
+    description: Windows olay gunlukleri; oturum, servis ve guvenlik olaylari.
+
+  - id: prefetch
+    category: execution
+    requires_vss: false
+    paths:
+      - '%WinDir%\Prefetch\*.pf'
+    description: Prefetch dosyalari; program calistirma kanitlari.

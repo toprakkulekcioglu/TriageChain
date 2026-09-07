@@ -1,0 +1,19 @@
+# Testlerde kullanilan ornek konfigurasyon.
+# output_dir testler tarafindan gecici bir dizinle degistirilir.
+case:
+  case_id: "CASE-TEST-001"
+  operator: "test.operator"
+  description: "Birim testleri icin ornek vaka"
+
+collection:
+  targets:
+    - event_logs
+    - prefetch
+  hash_algorithm: sha256
+  output_dir: "REPLACED_BY_TEST"
+
+custody:
+  log_path: null
+
+logging:
+  level: INFO
