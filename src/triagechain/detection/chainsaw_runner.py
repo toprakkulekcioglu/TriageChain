@@ -30,6 +30,7 @@ import yaml
 
 from triagechain.collection.hashing import hash_file
 from triagechain.collection.models import CollectedArtifact, CollectionManifest
+from triagechain.collection.winpath import to_long_path
 from triagechain.config.loader import resolve_chainsaw_manifest_path
 from triagechain.config.schema import TriageChainConfig
 from triagechain.core.errors import ConfigError, DetectionError
@@ -195,7 +196,7 @@ def _scan_artifact(
 
     output_dir = case_dir / "detections" / "chainsaw"
     try:
-        output_dir.mkdir(parents=True, exist_ok=True)
+        to_long_path(output_dir).mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise DetectionError(f"Tespit cikti dizini olusturulamadi: {output_dir} ({exc})") from exc
 
@@ -277,11 +278,11 @@ def _parse_findings(
     Ayristirma basarisiz olursa OLUMCUL DEGIL: bos bulgu listesi + uyari
     metni doner, ham JSON zaten diskte durur (detection/runner.py'nin CSV
     icin yaptigi ayni sey)."""
-    if not output_json.is_file():
+    if not to_long_path(output_json).is_file():
         return [], f"Chainsaw cikti dosyasi olusmadi: {output_json}"
 
     try:
-        raw_text = output_json.read_text(encoding="utf-8-sig")
+        raw_text = to_long_path(output_json).read_text(encoding="utf-8-sig")
         if not raw_text.strip():
             # Esleme yoksa (0 bulgu) Chainsaw bos bir dosya yazar -- hata degil.
             return [], None
@@ -345,8 +346,8 @@ def _write_tool_logs(
     """detection/runner.py'deki ayni adli fonksiyonla birebir ayni kural."""
     stdout_log = output_dir / f"{filename}.stdout.log"
     stderr_log = output_dir / f"{filename}.stderr.log"
-    stdout_log.write_text(_decode(stdout), encoding="utf-8")
-    stderr_log.write_text(_decode(stderr), encoding="utf-8")
+    to_long_path(stdout_log).write_text(_decode(stdout), encoding="utf-8")
+    to_long_path(stderr_log).write_text(_decode(stderr), encoding="utf-8")
     return stdout_log, stderr_log
 
 

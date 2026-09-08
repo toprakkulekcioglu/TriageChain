@@ -16,6 +16,7 @@ from triagechain.collection.models import CollectedArtifact, CollectionManifest
 from triagechain.collection.readers import open_source
 from triagechain.collection.selector import ResolvedTarget, resolve_targets
 from triagechain.collection.vss_snapshot import VssSnapshot
+from triagechain.collection.winpath import to_long_path
 from triagechain.config.schema import TriageChainConfig
 from triagechain.core.errors import CollectionError, IntegrityError
 from triagechain.custody.ledger import CustodyLedger
@@ -31,32 +32,51 @@ logger = logging.getLogger(__name__)
 
 
 def run_collection(config: TriageChainConfig, ledger: CustodyLedger) -> CollectionManifest:
-    """Konfigurasyondaki hedefleri toplar ve manifesti dondurur."""
+    """Konfigurasyondaki hedefleri toplar ve manifesti dondurur.
+
+    `collection.source_root` ayarlanmissa "ice aktarma modu"ndayiz: hedefler
+    canli `%SystemDrive%` yerine BASKA bir aracla (orn. KAPE) ONCEDEN
+    toplanmis bir klasor agacindan okunuyor. Bu modda VSS HICBIR SEKILDE
+    acilmaz (ice aktarilan dosyalar zaten kilitli olmayan duz kopyalardir)
+    ve ek disk toplama (additional_volumes) atlanir -- "ek birim" kavraminin
+    tek bir ice aktarilmis makine agacinda karsiligi yoktur.
+    """
     operator = config.case.operator
     case_id = config.case.case_id
     algorithm = config.collection.hash_algorithm
     case_dir = Path(config.collection.output_dir) / case_id
     artifacts_root = case_dir / "artifacts"
+    source_root = (
+        Path(config.collection.source_root) if config.collection.source_root else None
+    )
 
     manifest = CollectionManifest(case_id=case_id, started_at_utc=datetime.now(timezone.utc))
 
-    ledger.append_event(
-        "case_opened",
-        operator,
-        {
-            "run_id": manifest.run_id,
-            "targets": list(config.collection.targets),
-            "output_dir": str(case_dir),
-            "hash_algorithm": algorithm,
-        },
-    )
+    started_payload = {
+        "run_id": manifest.run_id,
+        "targets": list(config.collection.targets),
+        "output_dir": str(case_dir),
+        "hash_algorithm": algorithm,
+    }
+    if source_root is not None:
+        # Denetim izinde acikca gorunmeli: bu bir CANLI toplama degil, daha
+        # once BASKA bir aracla uretilmis bir artefakt agacinin ice
+        # aktarilmasi -- ozgun edinim zamani/yontemi bu olay DEGIL, sadece
+        # TriageChain'in bu dosyalari GORDUGU an.
+        started_payload["source_root"] = str(source_root)
+        started_payload["mode"] = "import"
+    ledger.append_event("case_opened", operator, started_payload)
 
     targets = resolve_targets(
-        list(config.collection.targets), catalog_module.default_catalog_path()
+        list(config.collection.targets), catalog_module.default_catalog_path(),
+        source_root=source_root,
     )
 
     with ExitStack() as stack:
-        snapshot = _open_snapshot_if_needed(targets, manifest, ledger, operator, stack)
+        snapshot = (
+            None if source_root is not None
+            else _open_snapshot_if_needed(targets, manifest, ledger, operator, stack)
+        )
         for target in targets:
             _collect_target(
                 target=target,
@@ -68,16 +88,17 @@ def run_collection(config: TriageChainConfig, ledger: CustodyLedger) -> Collecti
                 manifest=manifest,
                 ledger=ledger,
             )
-        _collect_additional_volumes(
-            config=config,
-            artifacts_root=artifacts_root,
-            algorithm=algorithm,
-            case_id=case_id,
-            operator=operator,
-            manifest=manifest,
-            ledger=ledger,
-            stack=stack,
-        )
+        if source_root is None:
+            _collect_additional_volumes(
+                config=config,
+                artifacts_root=artifacts_root,
+                algorithm=algorithm,
+                case_id=case_id,
+                operator=operator,
+                manifest=manifest,
+                ledger=ledger,
+                stack=stack,
+            )
         _collect_suspicious_binaries(
             config=config,
             artifacts_root=artifacts_root,
@@ -300,11 +321,16 @@ def _collect_target(
 
 
 def _copy_and_hash(stream: BinaryIO, dest: Path, algorithm: str) -> tuple[str, int]:
-    """Akisi hedefe kopyalarken ayni anda hash'ler; (hash, boyut) dondurur."""
+    """Akisi hedefe kopyalarken ayni anda hash'ler; (hash, boyut) dondurur.
+
+    Uzun olay gunlugu kanal adlari + derin vaka klasoru MAX_PATH'i (260
+    karakter) asabiliyor -- bkz. winpath.to_long_path.
+    """
     digest = hashlib.new(algorithm)
     size = 0
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with open(dest, "wb") as out:
+    long_dest = to_long_path(dest)
+    long_dest.parent.mkdir(parents=True, exist_ok=True)
+    with open(long_dest, "wb") as out:
         while True:
             chunk = stream.read(DEFAULT_CHUNK_SIZE)
             if not chunk:
@@ -319,7 +345,7 @@ def _unique_dest(target_dir: Path, filename: str) -> Path:
     """Ayni isimli dosyalarin (or. her kullanicinin NTUSER.DAT'i) ustune yazilmasini onler."""
     candidate = target_dir / filename
     counter = 1
-    while candidate.exists():
+    while to_long_path(candidate).exists():
         candidate = target_dir / f"{filename}.{counter}"
         counter += 1
     return candidate

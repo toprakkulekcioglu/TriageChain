@@ -24,6 +24,12 @@ collection:
   # ozgu bir yol listesi.
   # suspicious_binaries:
   #   - "C:\\TriageChain\\output\\supheli_ornek.exe"
+  # Ice aktarma modu: BASKA bir aracla (orn. KAPE --zip ciktisi) ONCEDEN
+  # toplanmis bir artefakt agacinin koku -- ayarlanirsa yukaridaki hedefler
+  # canli %SystemDrive% yerine BU klasor altina karsi cozulur, VSS hic
+  # acilmaz. KAPE ciktisinda tipik olarak "C" adli bir alt klasor olur
+  # (orijinal C:\ yapisini tasir) -- source_root'u O klasore gosterin.
+  # source_root: "C:\\ice_aktar\\2026-06-07T220139_user\\C"
 
 custody:
   log_path: null

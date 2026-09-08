@@ -1541,3 +1541,102 @@ offscreen ekran görüntüsüyle görsel olarak kontrol edildi. `report.html`
 için yeni bir test eklendi (`test_collect_route_detect_then_report`'a):
 `'class="report-logo" src="data:image/png;base64,' in html`. Tüm paket
 (186 test) yeşil.
+
+---
+
+## İçe aktarma modu (`collection.source_root`): canlı sistem yerine önceden toplanmış bir artefakt ağacı
+
+**Karar:** Kullanıcı gerçek bir üniversite ödevinden kalma bir KAPE
+toplama arşivi (`final lab some kape analiz.rar`, 3 ayrı makineden —
+user/server/domain — gerçek KAPE `--zip` çıktısı) verip "illa o anlık
+çıktı almak zorunda değil, alınmış verileri de analiz edebilmesi gerekir"
+dedi. TriageChain'in çekirdek varsayımı ("canlı, çalışan bir Windows
+sistemine karşı topla") bunu engelliyordu — katalogdaki her hedef
+`%SystemDrive%`'a (ya da `registry_ntuser`/`registry_usrclass` için sabit
+`C:`'ye) göre çözülüyordu. Çözüm: `collection.source_root` (opsiyonel,
+varsayılan `None`) — ayarlanmışsa:
+
+1. `collection/selector.py::expand_pattern()` HER kalıbı (ister
+   `%SystemDrive%` ister sabit `C:\Users\*\...`) sürücü harfini çıkarıp
+   `source_root` altına yeniden köklendiriyor (`ntpath.splitdrive` +
+   segment listesi + `Path(source_root, *segments)`).
+2. `collector.py::run_collection()` VSS'i **hiçbir hedef için**
+   açmıyor — `_open_snapshot_if_needed()` hiç çağrılmıyor, `_collect_
+   target`'e her zaman `snapshot=None` gidiyor. Katalogdaki `requires_
+   vss: true` etiketi SİLİNMİYOR (rapor/bulgu tarafında hâlâ anlamlı) ama
+   collector davranışı için `snapshot=None` olduğundan `open_source()`
+   zaten `read_plain()`'e düşüyor — içe aktarılmış dosyalar kilitli
+   olmadığı için bu doğru ve yeterli.
+3. `_collect_additional_volumes()` bu modda atlanıyor ("ek birim"
+   kavramının tek bir içe aktarılmış makine ağacında karşılığı yok).
+4. `case_opened` custody olayına `mode: "import"` ve `source_root`
+   yazılıyor — denetim izinde bunun bir CANLI toplama olmadığı, TriageChain'in
+   bu dosyaları ne zaman GÖRDÜĞÜ açıkça duruyor (orijinal edinim TriageChain
+   dışında, başka bir araçla/zamanla oldu).
+
+**Neden `ntpath.splitdrive` (os.path DEĞİL):** İlk yazımda `os.path.
+splitdrive` kullanılmıştı — Windows'ta doğru çalışıyor ama CI Linux'ta
+(`ubuntu-latest`) `posixpath.splitdrive` `"C:"`yi sürücü olarak TANIMIYOR,
+rebase mantığı sessizce yanlış sonuç üretirdi (test yazarken bulundu,
+gerçek koşum hiç yapılmadan). `ntpath` modülü Windows yol sözdizimini
+platformdan BAĞIMSIZ olarak ayrıştırıyor — TriageChain'in katalog yolları
+zaten her zaman Windows sözdizimi, hangi platformda TEST edildiği
+mantığı değiştirmemeli.
+
+**Gerekçe:** Bu, projenin "canlı toplama" mimarisini KIRMADAN (aynı
+katalog, aynı `_collect_target`, aynı hash/custody mantığı yeniden
+kullanılıyor, tek bir yeni if/else dalı) gerçek bir kullanıcı ihtiyacını
+karşılıyor: DFIR eğitiminde/sınavlarında KAPE ile önceden toplanmış
+verinin TriageChain'in kendi tespit/rapor katmanlarından geçirilebilmesi.
+
+**Doğrulama:** GERÇEK bir KAPE zip'i (384 dosya: `$MFT`, SAM/SECURITY/
+SYSTEM/SOFTWARE kovanları, 121 gerçek `.evtx`, gerçek prefetch dosyaları)
+tam olarak `source_root` ile toplandı: **384/384 dosya, 0 hata**, custody
+zinciri geçerli. Ardından `route` adımı GERÇEK MFTECmd/RECmd/EvtxECmd/
+PECmd ikilileriyle çalıştırıldı: **376 işlendi, 0 hata** (8 atlanan, hepsi
+beklenen — kovan `.LOG1`/`.LOG2` dosyaları tek başına işlenmez). `report`
+geçerli bir rapor üretti. 3 yeni entegrasyon testi + 3 yeni birim testi
+(`tests/integration/test_import_mode_collection.py`,
+`tests/unit/test_selector.py`'ye eklenenler) — VssSnapshot çağrılırsa
+patlayan bir mock ile "VSS hiç açılmıyor" iddiası kilitlendi. Tüm paket
+(196 test) yeşil.
+
+---
+
+## Windows MAX_PATH (260 karakter) düzeltmesi: `\\?\` uzun-yol öneki
+
+**Karar:** Yukarıdaki gerçek KAPE testinde 5 gerçek `.evtx` dosyası
+(uzun Windows olay günlüğü kanal adları, örn.
+`Microsoft-Windows-DeviceManagement-Enterprise-Diagnostics-Provider%4Operational.evtx`)
++ derin vaka klasör yapısı birleşince hedef yol 260 karakteri aşıp
+`FileNotFoundError` verdi — Windows'un klasik `MAX_PATH` sınırı. Bu,
+`source_root` özelliğine özgü değil, **projenin var olan, daha önce hiç
+fark edilmemiş bir hatasıydı** (canlı toplamada da aynı şekilde
+tetiklenebilirdi, sadece o senaryoda hiç bu kadar uzun bir kanal adı +
+derin çıktı yolu birlikte denenmemişti). Tek, paylaşılan bir yardımcı
+eklendi: `collection/winpath.py::to_long_path()` — Win32 API'nin kendi
+`\\?\` (extended-length path) önekini, MUTLAK yollara ekliyor (UNC
+yollarını da `\\?\UNC\` ile ayrıca ele alıyor, göreli yollara
+DOKUNMUYOR). Bu fonksiyon **BEŞ ayrı dosyada** (aynı `_write_tool_logs`
+fonksiyonu projede kasıtlı olarak kopyalanmış durumda, bkz. her birinin
+kendi "AYNI adli fonksiyonla birebir ayni kural" notu) TriageChain'in
+KENDİ okuduğu/yazdığı yollara uygulandı: `collection/hashing.py::
+hash_file`, `collection/readers.py::read_plain`, `collection/collector.py`
+(`_copy_and_hash`, `_unique_dest`), `router/runner.py`, `detection/
+runner.py`, `detection/yara_runner.py`, `detection/chainsaw_runner.py`,
+`detection/capa_runner.py` (her birinin `output_dir.mkdir()` ve
+`_write_tool_logs()` çağrıları).
+
+**Bilinçli olarak DOKUNULMAYAN yer:** Dış araçlara (Hayabusa/Chainsaw/
+YARA/capa/EZ Tools) subprocess argv'siyle geçen çıktı yolları (`--csv`,
+`-o` vb.) `\\?\` ile ÖNEKLENMEDİ — bu yolları o dış ikili kendi I/O'suyla
+yazıyor, `\\?\` önekinin o araçlar tarafından nasıl karşılanacağı
+DOĞRULANMADI (proje ilkesi: gerçek davranış doğrulanmadan varsayım
+yapılmaz). TriageChain sadece KENDİ Python kodunun açtığı dosyalarda
+(log dosyaları, hash yeniden-okuma, JSON/CSV geri-okuma) düzeltme yaptı.
+
+**Doğrulama:** Aynı gerçek KAPE toplama testi düzeltmeden SONRA tekrar
+çalıştırıldı: **384/384 dosya, 0 hata** (önce 379/384, 5 hata idi).
+`tests/unit/test_winpath.py` (4 test, gerçek Windows'ta çalıştırıldı,
+`\\?\` önekinin pathlib tarafından beklendiği gibi korunduğu doğrulandı)
+eklendi. Tüm paket (196 test) yeşil.

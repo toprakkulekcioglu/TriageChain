@@ -25,6 +25,7 @@ import yaml
 
 from triagechain.collection.hashing import hash_file
 from triagechain.collection.models import CollectedArtifact, CollectionManifest
+from triagechain.collection.winpath import to_long_path
 from triagechain.config.schema import TriageChainConfig
 from triagechain.core.errors import ConfigError, RouterError
 from triagechain.custody.ledger import CustodyLedger
@@ -220,7 +221,7 @@ def _route_artifact(
     # bir dosya) devam etmenin anlami yok: bu olumcul sayilir. Ham OSError
     # kullaniciya cikmaz, custody katmanindaki gibi tipli bir hataya sarilir.
     try:
-        output_dir.mkdir(parents=True, exist_ok=True)
+        to_long_path(output_dir).mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise RouterError(
             f"Ayristirma cikti dizini olusturulamadi: {output_dir} ({exc})"
@@ -330,8 +331,8 @@ def _write_tool_logs(
     """
     stdout_log = output_dir / f"{filename}.stdout.log"
     stderr_log = output_dir / f"{filename}.stderr.log"
-    stdout_log.write_text(_decode(stdout), encoding="utf-8")
-    stderr_log.write_text(_decode(stderr), encoding="utf-8")
+    to_long_path(stdout_log).write_text(_decode(stdout), encoding="utf-8")
+    to_long_path(stderr_log).write_text(_decode(stderr), encoding="utf-8")
     return stdout_log, stderr_log
 
 

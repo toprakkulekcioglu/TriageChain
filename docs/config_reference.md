@@ -21,6 +21,7 @@ TriageChain tek bir YAML dosyasıyla çalıştırılır. Örnek:
 | `output_dir` | string (yol) | Evet | — | Çıktı kökü. Bu dizin yoksa oluşturulur, ancak **üst dizini önceden var ve yazılabilir olmalıdır**; değilse `ConfigError`. Diğer tüm yol alanlarının (`router.tools`, `detection.*_path` vb.) aksine **mutlak olması zorunlu değil** — bilinçli bir tasarım kararı: bu alanı besleyen tek kaynak analistin kendi yazdığı, güvenilir konfigürasyon dosyasıdır, güven sınırını aşan bir girdi değildir (bkz. `aldigim_kararlar.md` → güvenlik incelemesi). |
 | `additional_volumes` | string listesi | Hayır | `[]` | Sistem diski DIŞINDAKİ birimler (örn. `["D:", "E:"]`) — her biri için AYRI bir gölge kopya açılıp yalnızca o birimin `$MFT`'si toplanır (bkz. aşağıdaki not). Her değer bir sürücü harfi olmalı (`"D:"` ya da `"D:\\"`); başka bir şey `ConfigError` üretir. Normalize edilip büyük harfe, sondaki `\` olmadan saklanır. |
 | `suspicious_binaries` | string listesi | Hayır | `[]` | Analistin ELLE gösterdiği şüpheli yürütülebilir (`.exe`/`.dll`) dosyaların **mutlak** yolları — capa'nın (bkz. `detection.capa_path`) girdisi. Katalogdaki diğer hedefler gibi sabit bir konum DEĞİL: analist neyi şüpheli bulduysa onu yazar. Hepsi TEK bir `suspicious_binary` artefakt türü altında toplanır, VSS gerekmez. |
+| `source_root` | string (yol) veya `null` | Hayır | `null` | **İçe aktarma modu** (bkz. aşağıdaki bölüm) — BAŞKA bir araçla (örn. KAPE) ÖNCEDEN toplanmış bir artefakt ağacının kökü. Ayarlanmışsa katalogdaki TÜM hedefler (`%SystemDrive%`'a göre çözülenler dahil) bu kök altına yeniden köklendirilir ve VSS HİÇBİR ŞEKİLDE açılmaz. `null` ise (varsayılan) davranış hiç değişmez: canlı `%SystemDrive%`'a karşı toplar. |
 
 Çıktı düzeni:
 
@@ -65,6 +66,56 @@ binaries` farklı: analistin BİR VAKAYA ÖZGÜ olarak "bu dosya şüpheli"
 diye elle işaret ettiği yürütülebilirler. Bu yüzden bir katalog girdisi
 değil, doğrudan bir yol listesi — capa (bkz. `detection.capa_path`) bu
 listedeki dosyaları tarar, katalogdaki hiçbir hedefi taramaz.
+
+### İçe aktarma modu (`source_root`) — canlı sistem yerine önceden toplanmış bir artefakt ağacı
+
+TriageChain'in çekirdek varsayımı "canlı, çalışan bir Windows sistemine
+karşı topla" idi. `collection.source_root` bunu genişletir: BAŞKA bir
+araçla (tipik örnek: KAPE, `--zip` çıktısı) önceden toplanmış, artık
+kilitli OLMAYAN düz kopyalardan oluşan bir klasör ağacını "vaka" olarak
+kabul eder — gerçek bir Windows sistemi ya da yönetici hakları hiç
+gerekmez.
+
+Gerçek bir KAPE çıktısı (`C\$MFT`, `C\Windows\System32\config\SYSTEM`,
+`C\Windows\System32\winevt\Logs\*.evtx`, `C\Users\<kullanıcı>\NTUSER.DAT`
+gibi, orijinal `C:\` yapısını `C\` alt klasörü altında birebir taşıyan bir
+zip) açıldığında, `source_root`'u o `C\` klasörünün **kendisine**
+gösterin:
+
+```yaml
+collection:
+  targets: ["mft", "registry_system", "registry_sam", "registry_security",
+            "registry_software", "registry_ntuser", "registry_usrclass",
+            "event_logs", "prefetch"]
+  output_dir: "C:\\Vakalar"
+  source_root: "C:\\ice_aktar\\2026-06-07T220139_user\\C"
+```
+
+Nasıl çalışır: katalogdaki her kalıp — ister `%SystemDrive%\$MFT` gibi bir
+ortam değişkeni ister `C:\Users\*\NTUSER.DAT` gibi sabit bir sürücü harfi
+kullansın — sürücü harfi çıkarılıp `source_root` altına yeniden
+köklendirilir (bkz. `collection/selector.py::expand_pattern`). VSS
+**hiçbir hedef için** açılmaz — `requires_vss: true` etiketi katalogda
+KORUNUR (bulgu/rapor tarafında hâlâ anlamlı: "bu artefakt normalde kilitli
+olurdu") ama collector.py bu modda hiç gölge kopya denemez, dosyalar
+doğrudan okunur.
+
+`route` (MFTECmd/RECmd/EvtxECmd/PECmd) ve sonraki tüm katmanlar (tespit,
+raporlama) hiçbir değişiklik gerektirmeden çalışır — onlar zaten toplama
+katmanının ÇIKTISI (vakanın kendi `artifacts/` klasörü) üzerinde
+çalışıyor, verinin canlı mı yoksa içe aktarılmış mı olduğunu bilmeleri
+gerekmiyor.
+
+`additional_volumes` içe aktarma modunda **atlanır** (bir "ek birim"
+kavramının tek bir içe aktarılmış makine ağacında karşılığı yok);
+`suspicious_binaries` etkilenmez (zaten `source_root`'tan bağımsız,
+analistin verdiği mutlak bir yol).
+
+Gerçek bir KAPE çıktısına karşı doğrulandı: 384/384 dosya (SAM/SECURITY/
+SYSTEM/SOFTWARE kovanları, 121 gerçek `.evtx`, gerçek prefetch dosyaları)
+hatasız toplandı, `route` adımı gerçek MFTECmd/RECmd/EvtxECmd/PECmd ile
+0 hatayla tamamlandı, `report` geçerli bir zincirle sonuçlandı — bkz.
+`aldigim_kararlar.md` → "İçe aktarma modu".
 
 ## `custody`
 

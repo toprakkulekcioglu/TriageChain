@@ -111,6 +111,18 @@
   `PySide6>=6.7` (platform işaretleyicisi gerekmiyor). 5 yeni test, tamamı
   `QT_QPA_PLATFORM=offscreen` ile (toplam 88).
 
+- **İçe aktarma modu (`collection.source_root`) eklendi** — TriageChain
+  artık SADECE canlı bir Windows sistemine karşı değil, BAŞKA bir araçla
+  (örn. KAPE) önceden toplanmış bir artefakt ağacına karşı da
+  çalıştırılabiliyor. Ayarlandığında katalog VSS hiç açmadan, tüm hedefleri
+  bu kök altına yeniden köklendiriyor. Gerçek bir üniversite KAPE
+  ödevi verisiyle uçtan uca doğrulandı (384/384 dosya, 0 hata; ardından
+  gerçek MFTECmd/RECmd/EvtxECmd/PECmd ile `route`, 0 hata). Bu test
+  sırasında ayrıca Windows'un 260 karakter `MAX_PATH` sınırını aşan (uzun
+  olay günlüğü kanal adları) gerçek, önceden fark edilmemiş bir hata
+  bulunup düzeltildi (`collection/winpath.py::to_long_path`, beş dosyaya
+  uygulandı). Detaylar `aldigim_kararlar.md`'de. 6 yeni test (toplam 196).
+
 ## Sırada
 
 1. ~~Hayabusa CSV başlıkları doğrulanamadı~~ **tamamlandı** — kullanıcının

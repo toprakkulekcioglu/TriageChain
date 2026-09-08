@@ -90,3 +90,34 @@ def test_env_variable_fallback_when_not_set(monkeypatch):
     monkeypatch.delenv("SystemDrive", raising=False)
     assert str(expand_pattern("%SystemDrive%/x")[0]).startswith("C:")
     assert "SystemDrive" not in os.environ
+
+
+def test_source_root_rebases_env_variable_pattern(monkeypatch, tmp_path):
+    # Ice aktarma modu: %WinDir% gibi bir degisken de, hardcoded 'C:' gibi,
+    # AYNI surucu-kok mantigiyla source_root altina yeniden koklendirilmeli
+    # (bkz. collection/selector.py -> expand_pattern dokstring'i).
+    monkeypatch.setenv("WinDir", r"C:\Windows")
+    result = expand_pattern(r"%WinDir%\System32\config\SYSTEM", source_root=tmp_path)
+    assert result == [tmp_path / "Windows" / "System32" / "config" / "SYSTEM"]
+
+
+def test_source_root_rebases_hardcoded_drive_letter_pattern(tmp_path):
+    # registry_ntuser/registry_usrclass gibi hedefler %SystemDrive% DEGIL,
+    # sabit 'C:\Users\*\...' kullaniyor -- source_root ikisini de AYNI
+    # sekilde ele almali (drive-split + yeniden koklendirme).
+    (tmp_path / "Users" / "kaan").mkdir(parents=True)
+    (tmp_path / "Users" / "kaan" / "NTUSER.DAT").write_bytes(b"x")
+    result = expand_pattern(r"C:\Users\*\NTUSER.DAT", source_root=tmp_path)
+    assert result == [tmp_path / "Users" / "kaan" / "NTUSER.DAT"]
+
+
+def test_resolve_targets_passes_source_root_through(test_catalog, tmp_path):
+    # 'fake_notes' hedefi mutlak, sabit bir yola (FAKE_ARTIFACTS/notes.txt)
+    # isaret ediyor -- asil kontrol, resolve_targets'in source_root
+    # parametresini GERCEKTEN expand_pattern'a ilettigi (drive-split sonrasi
+    # kok source_root'a tasindigi icin path artik FAKE_ARTIFACTS altinda
+    # DEGIL, tmp_path altinda olmali). Var-olmayan bir dosyaya isaret etmesi
+    # sorun degil: duz (glob'suz) bir yol icin varlik kontrolu yapilmiyor.
+    (target,) = resolve_targets(["fake_notes"], test_catalog, source_root=tmp_path)
+    assert target.paths[0] != FAKE_ARTIFACTS / "notes.txt"
+    assert str(target.paths[0]).startswith(str(tmp_path))

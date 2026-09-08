@@ -6,6 +6,8 @@ import hashlib
 from pathlib import Path
 from typing import BinaryIO, Union
 
+from triagechain.collection.winpath import to_long_path
+
 DEFAULT_CHUNK_SIZE = 1024 * 1024
 
 
@@ -19,7 +21,7 @@ def hash_file(
     if hasattr(path_or_stream, "read"):
         _feed(path_or_stream, digest, chunk_size)
     else:
-        with open(path_or_stream, "rb") as handle:
+        with open(to_long_path(Path(path_or_stream)), "rb") as handle:
             _feed(handle, digest, chunk_size)
     return digest.hexdigest()
 

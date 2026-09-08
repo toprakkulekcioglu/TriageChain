@@ -46,6 +46,14 @@ class CollectionConfig(BaseModel):
     # herkesce bilinen bir konum degil. Bu yuzden ayri bir liste: analist
     # supheli bulunan dosyanin/dosyalarin MUTLAK yolunu buraya yazar.
     suspicious_binaries: list[str] = Field(default_factory=list)
+    # Ice aktarma modu: BASKA bir aracla (orn. KAPE) ONCEDEN toplanmis, artik
+    # canli/kilitli OLMAYAN bir artefakt agacinin KOKU. Ayarlanmissa katalogun
+    # TUM hedefleri (normalde %SystemDrive%'a gore cozulen) bu kok altina
+    # yeniden koklendirilir VE VSS hicbir sekilde acilmaz -- ice aktarilan
+    # dosyalar zaten kilitli olmayan duz kopyalardir (bkz. collection/
+    # selector.py::expand_pattern, collector.py::run_collection). None ise
+    # (varsayilan) davranis hic degismez: canli %SystemDrive%'a karsi toplar.
+    source_root: Optional[str] = None
 
     @field_validator("targets")
     @classmethod
@@ -87,6 +95,15 @@ class CollectionConfig(BaseModel):
                 "suspicious_binaries yalnizca mutlak yol olmali: "
                 + ", ".join(repr(v) for v in not_absolute)
             )
+        return value
+
+    @field_validator("source_root")
+    @classmethod
+    def _check_source_root_absolute(cls, value: Optional[str]) -> Optional[str]:
+        # Diger mutlak-yol dogrulamalariyla ayni gerekce. Klasorun VAR olmasi
+        # burada aranmaz; kosu aninda kontrol edilir (bkz. collector.py).
+        if value is not None and not Path(value).is_absolute():
+            raise ValueError(f"source_root mutlak yol olmali: {value}")
         return value
 
 

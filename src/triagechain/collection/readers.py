@@ -10,11 +10,12 @@ from pathlib import Path
 from typing import BinaryIO, Optional
 
 from triagechain.collection.vss_snapshot import VssSnapshot
+from triagechain.collection.winpath import to_long_path
 
 
 def read_plain(path: Path) -> BinaryIO:
     """Kilitli olmayan dosyayi dogrudan acar."""
-    return open(path, "rb")
+    return open(to_long_path(path), "rb")
 
 
 def read_via_vss(path: Path, snapshot: VssSnapshot) -> BinaryIO:

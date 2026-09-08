@@ -34,6 +34,7 @@ import yaml
 
 from triagechain.collection.hashing import hash_file
 from triagechain.collection.models import CollectedArtifact, CollectionManifest
+from triagechain.collection.winpath import to_long_path
 from triagechain.config.loader import resolve_yara_manifest_path
 from triagechain.config.schema import TriageChainConfig
 from triagechain.core.errors import ConfigError, DetectionError
@@ -196,7 +197,7 @@ def _scan_artifact(
 
     output_dir = case_dir / "detections" / "yara"
     try:
-        output_dir.mkdir(parents=True, exist_ok=True)
+        to_long_path(output_dir).mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise DetectionError(f"YARA cikti dizini olusturulamadi: {output_dir} ({exc})") from exc
 
@@ -296,8 +297,8 @@ def _write_tool_logs(
     """detection/runner.py'deki ayni adli fonksiyonla birebir ayni kural."""
     stdout_log = output_dir / f"{filename}.stdout.log"
     stderr_log = output_dir / f"{filename}.stderr.log"
-    stdout_log.write_text(_decode(stdout), encoding="utf-8")
-    stderr_log.write_text(_decode(stderr), encoding="utf-8")
+    to_long_path(stdout_log).write_text(_decode(stdout), encoding="utf-8")
+    to_long_path(stderr_log).write_text(_decode(stderr), encoding="utf-8")
     return stdout_log, stderr_log
 
 

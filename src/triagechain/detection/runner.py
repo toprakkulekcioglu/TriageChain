@@ -27,6 +27,7 @@ import yaml
 
 from triagechain.collection.hashing import hash_file
 from triagechain.collection.models import CollectedArtifact, CollectionManifest
+from triagechain.collection.winpath import to_long_path
 from triagechain.config.loader import resolve_detection_manifest_path
 from triagechain.config.schema import TriageChainConfig
 from triagechain.core.errors import ConfigError, DetectionError
@@ -232,7 +233,7 @@ def _scan_artifact(
 
     output_dir = case_dir / "detections" / "hayabusa"
     try:
-        output_dir.mkdir(parents=True, exist_ok=True)
+        to_long_path(output_dir).mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise DetectionError(
             f"Tespit cikti dizini olusturulamadi: {output_dir} ({exc})"
@@ -318,11 +319,13 @@ def _parse_findings(
     uyari metni doner. Ham CSV zaten diskte durdugu icin veri kaybolmaz,
     sadece manifeste yapilandirilmis olarak giremez.
     """
-    if not output_csv.is_file():
+    if not to_long_path(output_csv).is_file():
         return [], f"Hayabusa cikti dosyasi olusmadi: {output_csv}"
 
     try:
-        with open(output_csv, "r", encoding="utf-8-sig", errors="replace", newline="") as handle:
+        with open(
+            to_long_path(output_csv), "r", encoding="utf-8-sig", errors="replace", newline=""
+        ) as handle:
             reader = csv.DictReader(handle)
             if not reader.fieldnames:
                 return [], f"Hayabusa cikti dosyasi bos ya da basliksiz: {output_csv}"
@@ -394,8 +397,8 @@ def _write_tool_logs(
     """Aracin stdout/stderr ciktisini diske yazar ve iki log yolunu dondurur."""
     stdout_log = output_dir / f"{filename}.stdout.log"
     stderr_log = output_dir / f"{filename}.stderr.log"
-    stdout_log.write_text(_decode(stdout), encoding="utf-8")
-    stderr_log.write_text(_decode(stderr), encoding="utf-8")
+    to_long_path(stdout_log).write_text(_decode(stdout), encoding="utf-8")
+    to_long_path(stderr_log).write_text(_decode(stderr), encoding="utf-8")
     return stdout_log, stderr_log
 
 
