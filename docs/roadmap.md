@@ -123,6 +123,25 @@
   bulunup düzeltildi (`collection/winpath.py::to_long_path`, beş dosyaya
   uygulandı). Detaylar `aldigim_kararlar.md`'de. 6 yeni test (toplam 196).
 
+- **"Yeni Vaka Oluştur" sihirbazı eklendi** — kullanıcı artık elle YAML
+  yazmak/düzenlemek zorunda değil. `gui_qt/case_wizard.py::NewCaseDialog`
+  KAPE'nin kendi GUI'sindeki "target source"/"target destination"
+  deneyimini taklit ediyor: vaka bilgisi, kaynak (canlı sistem / önceden
+  toplanmış klasör / ZIP — otomatik çıkartılıyor), çıktı dizini, toplanacak
+  artefaktlar ve opsiyonel bir "araç klasörü" (bilinen EZ Tools/Hayabusa/
+  YARA/Chainsaw/capa ikilileri rekürsif aranıp otomatik bulunuyor)
+  seçtiriyor; geçerli bir `TriageChainConfig` arka planda üretilip diske
+  yazılıyor ve hemen yükleniyor. **Toplu vaka oluşturma**: gerçek KAPE
+  `--zip` çıktısı tek arşivde birden fazla makine barındırabildiği için,
+  seçilen kaynak kökünde 2+ alt klasör bulunursa hepsi tek seferde ayrı
+  birer vaka olarak (türetilmiş vaka kimlikleriyle) oluşturulabiliyor —
+  kullanıcının kendi gerçek 3 makinelik KAPE verisiyle uçtan uca doğrulandı
+  (üretilen config elle yazılmış olanla birebir aynı `source_root`'u
+  üretti; gerçek `collect` 384/384 dosya 0 hata, ardından gerçek
+  MFTECmd/RECmd/EvtxECmd/PECmd ile `route` 0 hata). 18 yeni test
+  (`tests/unit/test_case_wizard.py`). Detaylar `aldigim_kararlar.md`'de.
+  Toplam 214 test.
+
 ## Sırada
 
 1. ~~Hayabusa CSV başlıkları doğrulanamadı~~ **tamamlandı** — kullanıcının

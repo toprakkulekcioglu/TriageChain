@@ -267,6 +267,17 @@ kullanmak için KAPE kurulumu ya da lisansı gerekmiyor.
   görünüm sağlıyor — hedef makinede bu fontların kurulu olması gerekmiyor.
   Eski `tkinter` arayüzü (`gui/app.py`) dosyası duruyor ama artık bu
   komuta bağlı değil.
+- **"Yeni Vaka Oluştur" sihirbazı** (`gui_qt/case_wizard.py::NewCaseDialog`):
+  KAPE'nin kendi GUI'sindeki "target source"/"target destination"
+  deneyimini taklit ediyor — kullanıcı vaka bilgisini yazıp kaynağı (canlı
+  sistem / önceden toplanmış klasör / ZIP, ZIP'ler `zipfile` ile otomatik
+  çıkartılıyor), çıktı dizinini, toplanacak artefaktları ve opsiyonel bir
+  "araç klasörünü" (EZ Tools/Hayabusa/YARA/Chainsaw/capa ikilileri
+  otomatik aranıp bulunuyor) seçiyor; geçerli bir `TriageChainConfig`
+  arka planda üretilip diske YAML olarak yazılıyor ve hemen yükleniyor —
+  kullanıcı hiçbir zaman ham YAML görmüyor/düzenlemiyor. Kaynak kökünde
+  birden fazla makine klasörü bulunursa (gerçek KAPE `--zip` çıktısının
+  kendi yapısı) hepsi TEK seferde ayrı birer vaka olarak oluşturulabiliyor.
 - **Standalone `.exe`**: `triagechain_gui.spec` (PyInstaller `--onefile`)
   arayüzü `TriageChainKonsolu.exe` olarak paketliyor — hedef makinede
   Python kurulu olması gerekmiyor.

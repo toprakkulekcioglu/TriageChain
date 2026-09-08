@@ -23,6 +23,7 @@ from PySide6.QtGui import QColor, QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
+    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -64,6 +65,7 @@ from triagechain.detection.runner import run_detection
 from triagechain.detection.yara_runner import run_yara_scan
 from triagechain.gui_qt import icons
 from triagechain.gui_qt import theme as t
+from triagechain.gui_qt.case_wizard import NewCaseDialog
 from triagechain.gui_qt.widgets import (
     Card,
     MonoLabel,
@@ -1755,6 +1757,10 @@ class TriageChainWindow(QMainWindow):
         # Aksiyon seridi
         actions = QHBoxLayout()
         actions.setSpacing(8)
+        self.new_case_button = PrimaryButton("Yeni Vaka Oluştur")
+        self.new_case_button.clicked.connect(self._on_new_case)
+        actions.addWidget(self.new_case_button)
+
         self.load_button = SecondaryButton("Vaka Konfigürasyonu Yükle")
         self.load_button.clicked.connect(self._on_load_config)
         actions.addWidget(self.load_button)
@@ -1914,6 +1920,29 @@ class TriageChainWindow(QMainWindow):
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         self.table = table
         return table
+
+    # -- Yeni vaka sihirbazi --------------------------------------------------
+    def _on_new_case(self) -> None:
+        """Sihirbazi acar; kabul edilirse uretilen YAML'lardan ilkini yukler.
+
+        Sihirbaz toplu modda (bkz. case_wizard.py) tek seferde birden fazla
+        vaka uretebilir -- hepsi ayni output_dir altina yazildigi icin
+        'Vakalar' sayfasi (list_case_summaries, output_dir alt klasorlerini
+        tarar) diger uretilenleri de otomatik listeler; kullanicinin sihirbazi
+        her makine icin ayri ayri calistirmasina gerek kalmaz.
+        """
+        dialog = NewCaseDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.generated_config_paths:
+            return
+        paths = dialog.generated_config_paths
+        self.load_config_file(paths[0])
+        if len(paths) > 1:
+            case_ids = ", ".join(p.stem.removesuffix("_config.generated") for p in paths)
+            self._set_status(
+                f"{len(paths)} vaka oluşturuldu ({case_ids}) -- "
+                f"'{self.config.case.case_id if self.config else paths[0].stem}' yüklendi, "
+                "diğerlerine Vakalar sayfasından geçebilirsiniz."
+            )
 
     # -- Konfigurasyon yukleme ---------------------------------------------
     def _on_load_config(self) -> None:

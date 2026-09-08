@@ -1640,3 +1640,64 @@ yapılmaz). TriageChain sadece KENDİ Python kodunun açtığı dosyalarda
 `tests/unit/test_winpath.py` (4 test, gerçek Windows'ta çalıştırıldı,
 `\\?\` önekinin pathlib tarafından beklendiği gibi korunduğu doğrulandı)
 eklendi. Tüm paket (196 test) yeşil.
+
+---
+
+## "Yeni Vaka Oluştur" sihirbazı: elle YAML yazma zorunluluğu kaldırıldı
+
+**Karar:** Kullanıcı, kendisine hazır YAML config dosyaları teslim edip
+"GUI'de yükle" demem üzerine haklı olarak itiraz etti: "herkes böyle YAML
+ile uğraşmaz". İstenen, KAPE'nin kendi GUI'sindeki (gkape) "target source"
++ "target destination" ikilisiyle birebir aynı deneyim — kullanıcı sadece
+dosya/klasör seçer, YAML'i hiç görmez. `gui_qt/case_wizard.py` içinde
+`NewCaseDialog` eklendi: vaka bilgisi (kimlik/operatör/açıklama), kaynak
+(canlı sistem / önceden toplanmış klasör / ZIP — ZIP stdlib `zipfile` ile
+otomatik çıkartılıyor, yeni bir bağımlılık eklenmedi), çıktı dizini,
+toplanacak artefaktlar (katalogdan otomatik listelenen onay kutuları) ve
+opsiyonel bir "araç klasörü" seçtiriyor; "Vakayı Oluştur" tıklanınca bu
+seçimlerden geçerli bir `TriageChainConfig` inşa edilip diske YAML olarak
+yazılıyor ve hemen `load_config_file()` ile ana pencereye yükleniyor.
+Dashboard'a `PrimaryButton("Yeni Vaka Oluştur")` eklendi (mevcut "Vaka
+Konfigürasyonu Yükle" — artık ikincil, elle hazırlanmış bir YAML'i açmak
+isteyen ileri kullanıcı için hâlâ duruyor).
+
+**Toplu vaka oluşturma (kullanıcının sorusu üzerine eklendi):** Sihirbazın
+ilk sürümü tek bir kaynak = tek bir vaka varsayıyordu; kullanıcı haklı
+olarak sordu: "bu YAML dosyalarını hep elle mi gireceğiz tek tek, toplu
+seçmeye izin vermesi daha iyi olmaz mı". Gerçek KAPE `--zip` çıktısı zaten
+TEK bir arşivin kökünde BİRDEN FAZLA makine barındırabiliyor (kullanıcının
+kendi test verisi: `<zaman-damgası>_user/`, `..._server/`, `..._domain/`,
+her biri kendi `C/` sürücü kökünü taşıyor) — bu yüzden kaynak kök
+klasöründe 2+ alt klasör bulunursa (`detect_machine_roots`) sihirbaz
+bunları "aday makine" olarak onay kutularıyla listeliyor; işaretlenen her
+alt klasör için ayrı bir vaka kimliği (`<temel-kimlik>-<türetilen-ek>`,
+zaman damgası atılıp yalnızca rol kısmı kullanılarak, bkz.
+`derive_case_suffix`) ve ayrı bir `source_root` (`resolve_drive_root` ile
+otomatik olarak alt klasörün kendi `C/` klasörüne indirgeniyor) ile TEK
+TIKLAMADA birden fazla YAML üretiliyor. Tek makinelik köklerde (tek alt
+klasör, doğrudan `C/`) toplu mod devreye GİRMİYOR — 2. seviye tek bir alt
+klasör "birden fazla makine" sayılmaz, aksi halde her normal tek-vaka
+kaynağı yanlışlıkla toplu moda düşerdi.
+
+**Araç otomatik bulma:** Kullanıcının kişisel `TriageChain-Tools\` yolu
+kod içine GÖMÜLMEDİ (kişisel bir yol, genel amaçlı bir özelliğe uygun
+değil) — bunun yerine kullanıcı istediği herhangi bir "araç klasörü"
+seçebiliyor, `autodetect_tools()` bu klasör altında bilinen ikili adlarını
+(`MFTECmd.exe`, `RECmd.exe`, `EvtxECmd.exe`, `PECmd.exe`, `hayabusa*.exe`,
+`yara64.exe`, `chainsaw*.exe`, `capa.exe`) REKÜRSİF arıyor. Hiçbir şey
+bulunamaması hata değil — router/detection katmanları zaten tanımsız aracı
+"atlandı" olarak ele alıyor (bkz. `config/schema.py`'deki `Optional`
+alanlar); sihirbaz sadece kullanıcıyı elle yol yazmaktan kurtarıyor.
+
+**Doğrulama:** Kullanıcının gerçek `final-lab-kape\` kök klasörü (3 gerçek
+makine) sihirbaza TEK SEFER verildi — `detect_machine_roots` 3 alt klasörü
+doğru buldu, her biri için türetilen `source_root` daha önce elle yazılmış
+gerçek config dosyalarındaki (`final_lab_{user,server,domain}.yaml`)
+değerlerle BİREBİR eşleşti. Üretilen bir config gerçek `collect` komutuyla
+çalıştırıldı: **384/384 dosya, 0 hata** — elle yazılmış config ile aynı
+sonuç. `autodetect_tools()` gerçek `TriageChain-Tools\` klasörüne karşı
+test edildi: 4 EZ Tools ikilisi + Hayabusa yolu/kural klasörü doğru
+bulundu. 18 yeni test eklendi (`tests/unit/test_case_wizard.py`) — saf
+yardımcı fonksiyonlar (`derive_case_suffix`, `detect_machine_roots`,
+`resolve_drive_root`, `autodetect_tools`) ve Qt sihirbazının tekli/toplu/
+canlı-sistem/hata yolları. Tüm paket (214 test) yeşil.
