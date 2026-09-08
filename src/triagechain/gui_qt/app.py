@@ -6,7 +6,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication
 
-from triagechain.gui_qt import theme
+from triagechain.gui_qt import icons, theme
 from triagechain.gui_qt.main_window import TriageChainWindow
 
 
@@ -28,6 +28,10 @@ def main() -> int:
     # kurulumda okur (bkz. theme.py basindaki not).
     theme.load_embedded_fonts()
     app.setStyleSheet(theme.base_stylesheet())
+    # QApplication uzerinde ayarlanan ikon TUM pencerelere (ve gorev
+    # cubugu gruplamasina) varsayilan olarak uygulanir -- her pencerede
+    # ayrica setWindowIcon cagirmaya gerek yok.
+    app.setWindowIcon(icons.app_icon())
 
     window = TriageChainWindow()
     window.show()

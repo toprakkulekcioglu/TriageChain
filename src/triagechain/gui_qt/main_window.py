@@ -711,6 +711,7 @@ class TriageChainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("TriageChain Konsolu")
+        self.setWindowIcon(icons.app_icon())
         self.resize(1180, 760)
         self.config = None
         self.config_path: Optional[Path] = None
@@ -751,13 +752,13 @@ class TriageChainWindow(QMainWindow):
         # kalkan/rozet ikonuyla ayni fikir).
         brand_row = QHBoxLayout()
         brand_row.setSpacing(9)
+        # Kullanicinin sagladigi gercek marka logosundan turetilmis simge
+        # (bkz. icons.app_icon(), assets/brand/PROVENANCE.md) -- elle
+        # cizilmis kalkan SVG'sinin yerini aldi, artik gercek marka gorunuyor.
         brand_icon = QLabel()
         brand_icon.setFixedSize(30, 30)
         brand_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        brand_icon.setPixmap(icons.icon("shield", color=t.ACCENT_TEXT, size=16).pixmap(16, 16))
-        brand_icon.setStyleSheet(
-            f"background-color:{tint(t.ACCENT, 40)}; border-radius:{t.RADIUS_SM}px;"
-        )
+        brand_icon.setPixmap(icons.app_icon().pixmap(30, 30))
         brand_row.addWidget(brand_icon)
         brand = QLabel("TriageChain")
         brand.setStyleSheet(

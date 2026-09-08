@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/brand/triagechain_logo_source.png" alt="TriageChain" width="480">
+</p>
+
 # TriageChain
 
 > Windows DFIR triage collector with a tamper-evident, hash-chained chain of custody.

@@ -141,6 +141,9 @@ def test_collect_route_detect_then_report(config_path, capsys):
         assert forbidden not in html
     assert "GEÇERLİ" in html
     assert "Mimikatz Detected" in html
+    # Logo base64 GOMULU olmali (data: URI) -- harici dosya referansi degil,
+    # "tamamen offline acilabilmeli" kuralini bozmaz (bkz. renderer.py).
+    assert 'class="report-logo" src="data:image/png;base64,' in html
     # Bu senaryo yara-scan/chainsaw-scan/capa-scan calistirmiyor, o uc bolum
     # "henuz calistirilmadi" olmali.
     assert html.count("henüz çalıştırılmadı") == 3

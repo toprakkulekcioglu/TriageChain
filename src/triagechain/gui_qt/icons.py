@@ -51,3 +51,14 @@ def icon(name: str, color: str | None = None, size: int = 20) -> QIcon:
     result = QIcon(pixmap)
     _cache[key] = result
     return result
+
+
+def app_icon() -> QIcon:
+    """Uygulama/pencere ikonu -- kullanicinin sagladigi gercek marka logosundan
+    (assets/brand/) turetilmis, cok cozunurluklu bir .ico (bkz. PROVENANCE.md).
+    Diger SVG ikonlerin aksine renklendirme YAPILMAZ: logo kendi renklerini tasir.
+    """
+    path = _ASSETS_DIR / "app_icon.ico"
+    if not path.is_file():
+        return QIcon()
+    return QIcon(str(path))

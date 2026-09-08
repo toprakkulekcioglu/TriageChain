@@ -13,13 +13,29 @@ sayfasi sorunu burada yok.
 
 from __future__ import annotations
 
+import base64
 import html
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 from triagechain.reporting.executive import build_executive_summary
 from triagechain.reporting.models import Report
+
+# Rapor basligindaki logo -- base64 GOMULU (data: URI), harici bir dosya
+# referansi DEGIL: report.html'in "tamamen offline acilabilmeli" kuralini
+# bozmaz (bkz. modul dokstring'i). Dosya bulunamazsa (paketleme hatasi)
+# sessizce atlanir, rapor logosuz ama yine dogru uretilir.
+_LOGO_PATH = Path(__file__).resolve().parent / "assets" / "triagechain_logo_report.png"
+
+
+def _logo_data_uri() -> str:
+    try:
+        raw = _LOGO_PATH.read_bytes()
+    except OSError:
+        return ""
+    return "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
 
 # Cok bulgulu bir vakada (binlerce Sigma bulgusu) HTML'i acilamaz hale
 # getirmemek icin tabloya yalnizca ilk N bulgu yaziliyor; tamami her zaman
@@ -66,6 +82,7 @@ tr:nth-child(even) td { background: #fbfbfc; }
 pre { margin: 0; white-space: pre-wrap; word-break: break-word; font-size: 12px;
       font-family: Consolas, "Courier New", monospace; color: #333a42; }
 footer { margin-top: 32px; color: #5b6470; font-size: 12px; }
+.report-logo { display: block; height: 40px; margin: 0 0 12px; }
 
 /* Sekmeler: saf CSS (radio + genel kardes secici), JS/kutuphane YOK -- rapor
    internetsiz bir makinede de tiklanabilir kalsin diye. */
@@ -106,12 +123,15 @@ def render_html(report: Report) -> str:
     olan teknik detay, degismedi). Sekme gecisi saf CSS'le yapiliyor, JS yok.
     """
     title = f"TriageChain Raporu - {report.case_id}"
+    logo_uri = _logo_data_uri()
+    logo_html = f'<img class="report-logo" src="{logo_uri}" alt="TriageChain">' if logo_uri else ""
     parts = [
         "<!DOCTYPE html>",
         '<html lang="tr"><head><meta charset="utf-8">',
         f"<title>{_e(title)}</title>",
         f"<style>{_CSS}</style>",
         "</head><body>",
+        logo_html,
         f"<h1>{_e(title)}</h1>",
         f'<p class="sub">Rapor üretim zamanı (UTC): {_e(_dt(report.report_generated_at_utc))}'
         f" &middot; rapor koşusu: {_e(report.run_id)}</p>",

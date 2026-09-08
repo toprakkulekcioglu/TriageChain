@@ -15,6 +15,7 @@ from pathlib import Path
 
 block_cipher = None
 SRC = Path("src").resolve()
+APP_ICON = SRC / "triagechain/gui_qt/assets/icons/app_icon.ico"
 
 datas = [
     (str(SRC / "triagechain/gui_qt/assets/icons"), "triagechain/gui_qt/assets/icons"),
@@ -22,6 +23,7 @@ datas = [
     (str(SRC / "triagechain/collection/catalog"), "triagechain/collection/catalog"),
     (str(SRC / "triagechain/router/catalog"), "triagechain/router/catalog"),
     (str(SRC / "triagechain/detection/catalog"), "triagechain/detection/catalog"),
+    (str(SRC / "triagechain/reporting/assets"), "triagechain/reporting/assets"),
 ]
 
 a = Analysis(
@@ -59,4 +61,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=str(APP_ICON),
 )

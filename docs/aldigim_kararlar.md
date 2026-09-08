@@ -1486,3 +1486,58 @@ sırada, doğru insan-okur etiketlerle göründüğü doğrulandı — bkz. yuka
 "Fusion" kararındaki AYNI offscreen-render yöntemi). 3 yeni GUI testi
 (vaka yüklenmeden, route çalışmamışsa boş-durum, gerçek PECmd verisiyle
 dolu). Tüm paket (186 test) yeşil.
+
+---
+
+## Gerçek marka logosu entegre edildi: exe simgesi, pencere ikonu, sidebar, README, rapor başlığı
+
+**Karar:** Kullanıcı kendi ürettirdiği TriageChain logosunu (yatay
+dizilim: T/C + parmak izi simgesi + "TriageChain" kelime işareti +
+"DIGITAL FORENSIC" alt başlığı, PNG) sağladı ve "yapılabilecek tüm
+şeyleri yap" dedi. Kaynak dosyalar `assets/brand/`'a kondu (kaynak/türetme
+notu `assets/brand/PROVENANCE.md`'de — diğer `PROVENANCE.md`'lerden farkı,
+üçüncü taraf lisansı DEĞİL, "hangi dosya nereden türedi" izi). Şunlar
+yapıldı:
+
+1. **Kare simge çıkarma**: Yatay logodan sadece T/C + parmak izi kısmı,
+   PowerShell'in yerleşik `System.Drawing`'iyle (hiçbir paket kurulmadan)
+   arka plan rengine göre otomatik sınır tespiti + kareye tamamlama ile
+   kırpıldı (`triagechain_mark_square.png`).
+2. **Windows `.ico`**: Aynı yöntemle (yine `System.Drawing`, ICO
+   konteynerinin PNG-gömülü ICONDIR/ICONDIRENTRY formatı ELLE yazıldı —
+   .NET'in kendisi `.ico` YAZMIYOR) 16/32/48/64/128/256px içeren
+   çok-çözünürlüklü bir `.ico` üretildi
+   (`gui_qt/assets/icons/app_icon.ico`).
+3. **`triagechain_gui.spec`**: `EXE(...)`'e `icon=` parametresi eklendi —
+   artık `.exe`'nin kendisi Windows Gezgini'nde gerçek marka ikonuyla
+   görünüyor.
+4. **`gui_qt/icons.py::app_icon()`**: yeni bir yardımcı — `QApplication.
+   setWindowIcon()` (tüm pencereler + görev çubuğu grubu için varsayılan)
+   VE `TriageChainWindow.setWindowIcon()` (pencerenin kendisi için,
+   çiftle-güvence) burada kullanılıyor.
+5. **Sidebar marka simgesi**: elle çizilmiş "shield" SVG'sinin yerini
+   gerçek logo simgesi aldı (`main_window.py::_build_sidebar`) — offscreen
+   ekran görüntüsüyle gerçekten göründüğü doğrulandı.
+6. **`README.md`**: yatay logo GitHub'daki sayfanın en üstüne eklendi.
+7. **`report.html` başlığı**: logo (420×210'a küçültülmüş ayrı bir kopya,
+   `reporting/assets/triagechain_logo_report.png`) **base64 gömülü**
+   (`data:image/png;base64,...`) olarak ekleniyor — harici bir dosya
+   REFERANSI DEĞİL, projenin "rapor tamamen offline açılabilmeli, hiçbir
+   harici kaynak yok" kuralını bozmuyor (`_logo_data_uri()`, dosya
+   bulunamazsa sessizce atlanır, rapor logosuz ama yine doğru üretilir).
+
+**Gerekçe:** Görsel varlık üretimi (kırpma/`.ico` dönüştürme) için normalde
+akla ilk gelen yol (`pillow` kurup Python'da işlemek) kullanıcı tarafından
+REDDEDİLDİ (yeni global güvenlik kuralı: sistem komutu/script çalıştırmadan
+önce durup açıklama+onay). Bunun üzerine SIFIR paket kurulumu gerektiren
+bir alternatife (Windows'un kendi `System.Drawing`'i, PowerShell
+üzerinden) geçildi — hem güvenlik kuralına uyuyor hem de projenin "minimum
+bağımlılık" ilkesiyle tutarlı (bu iş için Python'a YENİ bir kütüphane
+eklenmedi).
+
+**Doğrulama:** Üretilen `.ico` `System.Drawing.Icon` ile YENİDEN
+yüklenerek geçerliliği doğrulandı. Sidebar'daki yeni simge gerçek bir
+offscreen ekran görüntüsüyle görsel olarak kontrol edildi. `report.html`
+için yeni bir test eklendi (`test_collect_route_detect_then_report`'a):
+`'class="report-logo" src="data:image/png;base64,' in html`. Tüm paket
+(186 test) yeşil.

@@ -51,12 +51,17 @@ where = ["src"]
 # fontlar yine kurulu degilse yedek fonta duser).
 "triagechain.gui_qt" = [
     "assets/icons/*.svg",
+    "assets/icons/*.ico",
     "assets/fonts/*.md",
     "assets/fonts/inter/*.ttf",
     "assets/fonts/inter/OFL.txt",
     "assets/fonts/jetbrains_mono/*.ttf",
     "assets/fonts/jetbrains_mono/OFL.txt",
 ]
+# report.html basligindaki logo -- assets/icons|fonts ile ayni gerekce
+# (__init__.py'siz bir klasor, ayrica listelenmezse kurulmus pakette
+# renderer.py'nin _logo_data_uri() dosyayi bulamaz, rapor logosuz kalir).
+"triagechain.reporting" = ["assets/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
