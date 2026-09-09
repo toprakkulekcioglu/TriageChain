@@ -1742,3 +1742,42 @@ klasörüne çıkartıldı → `detect_machine_roots` 3'ünü de buldu → toplu
 çalıştırıldı: **384/384 dosya, 0 hata** (elle hazırlanmış configle birebir
 aynı sonuç). 7 yeni test eklendi (`extract_archive` başarı/hata yolları,
 `_extract_nested_zips` idempotency dahil). Tüm paket (221 test) yeşil.
+
+---
+
+## Arşiv çıkartma arka plana alındı + ayrı "çıkartma klasörü" butonu
+
+**Karar:** Kullanıcı gerçek kullanımda iki sorun bildirdi: (1) "çıkartılacak
+yeri seçtiğimde app çöküyor", (2) "kök dizini ya da rar dosyasını seçtikten
+hemen sonra otomatik geliyor çıkartılacak dizin seçme sayfası, anasayfada
+onun için bir buton yok". İkisi de aynı kök nedene bağlıydı: `extract_archive`
++ `_extract_nested_zips` bir önceki sürümde ana (GUI) iş parçacığında,
+`QFileDialog.getExistingDirectory` diyaloğu kapanır kapanmaz senkron
+çalışıyordu — büyük bir arşivde (yüzlerce MB, yüzlerce dosya) Qt'nin olay
+döngüsü onlarca saniye bloke oluyor, Windows pencereyi "Yanıt Vermiyor"
+işaretliyordu (kullanıcı bunu "çöküyor" olarak yorumladı, haklı olarak).
+İkinci şikayet de aynı akışın bir parçası: arşiv seçimiyle hedef seçimi TEK
+bir tıklamaya (`_on_pick_source_zip`) zincirlenmişti, kullanıcının kontrol
+edebileceği AYRI bir "çıkartma klasörü" adımı/butonu yoktu.
+
+**Çözüm — iki değişiklik:**
+1. Tüm çıkartma mantığı (`extract_archive` + `extract_nested_zips`, artık
+   modül seviyesinde, Qt widget'ına DOKUNMUYOR) yeni bir `_ExtractionWorker
+   (QThread)` içine taşındı; `_start_extraction()` bunu başlatıp
+   `succeeded`/`failed` sinyalleriyle sonucu ana iş parçacığına bildiriyor.
+   Çalışırken TÜM seçim/onay butonları (Vazgeç dahil — `reject()` override
+   edilip iş parçacığı çalışırken engellendi, Esc/pencere X'i de bunu
+   tetikliyor) kapatılıyor, `ProgressBar.set_indeterminate()` gösteriliyor.
+2. Tek "Arşiv Seç" butonu iki AYRI, numaralı butona bölündü: "1) Arşiv
+   Dosyası Seç…" (sadece dosyayı seçer, `_pending_archive_path`'i yazar) ve
+   "2) Çıkartma Klasörü Seç…" (ilk buton tıklanana kadar KAPALI, sonra
+   etkinleşir) — kullanıcının istediği "onun için bir buton" tam olarak bu.
+
+**Doğrulama:** Kullanıcının gerçek `.rar` dosyasıyla (161MB, 3 iç içe .zip)
+`_start_extraction` doğrudan çağrılarak test edildi: iş parçacığı başlar
+başlamaz tüm butonlar kapanıyor, ilerleme çubuğu görünüyor; 6,5 saniyede
+bitiyor (bu sürede eski senkron sürüm arayüzü tamamen dondururdu);
+bitince butonlar/ilerleme çubuğu geri açılıyor, 3 makine doğru tespit
+ediliyor. 4 yeni test eklendi (arka plan tamamlanma, hata yolu, çıkartma
+sırasında `reject()` engeli, iç içe zip'li tam senaryo — `QThread.wait()` +
+`processEvents()` ile senkronize edilerek). Tüm paket (225 test) yeşil.

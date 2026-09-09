@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
+from PySide6.QtCore import QThread, Signal
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
@@ -50,7 +51,15 @@ from triagechain.config.schema import TriageChainConfig
 from triagechain.core.case import validate_case_id
 from triagechain.core.errors import ConfigError
 from triagechain.gui_qt import theme as t
-from triagechain.gui_qt.widgets import Card, Input, MonoInput, MonoLabel, PrimaryButton, SecondaryButton
+from triagechain.gui_qt.widgets import (
+    Card,
+    Input,
+    MonoInput,
+    MonoLabel,
+    PrimaryButton,
+    ProgressBar,
+    SecondaryButton,
+)
 
 # router/detection katmanlarinin aradigi .exe adlari -- "Arac Klasoru"
 # secilince bu klasor altinda REKURSIF aranir. Sadece dosya ADI biliniyor
@@ -144,6 +153,66 @@ def extract_archive(archive_path: Path, dest_path: Path) -> Optional[str]:
             "arşivler otomatik olarak onunla açılır -- kurup tekrar deneyin."
         )
     return None
+
+
+def extract_nested_zips(dest_path: Path) -> Optional[str]:
+    """Cikartilan kokte DOGRUDAN duran ic ice .zip dosyalarini kendi
+    adlarinda alt klasorlere cikartir. Basarili olursa (ic ice arsiv hic
+    yoksa da) None, hata varsa kullaniciya gosterilebilecek bir metin doner.
+
+    Gercek kullanici verisiyle bulundu: KAPE ciktisini paylasirken kullanilan
+    bir .rar, makineleri klasor olarak degil DOGRUDAN ic ice birer .zip
+    dosyasi olarak tasiyordu (orn. '2026-06-07T220139_user.zip' -- klasor
+    degil, dosya). Bu adim olmadan detect_machine_roots() hicbir alt klasor
+    bulamaz ve toplu mod hic devreye girmez.
+
+    Qt widget'ina DOKUNMAZ -- _ExtractionWorker icinde arka plan is
+    parcacigindan da guvenle cagrilabilsin diye (bkz. sinif basi notu).
+    """
+    nested = sorted(
+        p for p in dest_path.iterdir() if p.is_file() and p.suffix.lower() == ".zip"
+    )
+    for nested_zip in nested:
+        target = dest_path / nested_zip.stem
+        if target.exists():
+            continue
+        error = extract_archive(nested_zip, target)
+        if error:
+            return f"'{nested_zip.name}' çıkartılamadı: {error}"
+    return None
+
+
+class _ExtractionWorker(QThread):
+    """Arsiv cikartmayi (+ ic ice zip'leri) arka planda calistirir.
+
+    Bulunan gercek hata: bu is oncesinde ana (GUI) is parcaciginda
+    calisiyordu -- buyuk bir arsivde (yuzlerce megabayt, yuzlerce dosya)
+    Qt'nin olay dongusu dakikalarca bloke oluyor, Windows pencereyi "Yanit
+    Vermiyor" olarak isaretliyordu (kullaniciya "app çöküyor" gibi
+    goruntuleniyor). Bu sinif hicbir Qt widget'ina DOKUNMAZ -- sadece
+    dosya sistemi/subprocess islemi yapar, sonucu sinyal ile ana is
+    parcacigina bildirir (Qt kurali: widget'lar sadece GUI is parcacigindan
+    degistirilebilir).
+    """
+
+    succeeded = Signal(str)  # kaynak koku (str) -- Path degil, sinyal Path'i pickle'lamaz
+    failed = Signal(str)
+
+    def __init__(self, archive_path: Path, dest_path: Path, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._archive_path = archive_path
+        self._dest_path = dest_path
+
+    def run(self) -> None:
+        error = extract_archive(self._archive_path, self._dest_path)
+        if error:
+            self.failed.emit(error)
+            return
+        nested_error = extract_nested_zips(self._dest_path)
+        if nested_error:
+            self.failed.emit(nested_error)
+            return
+        self.succeeded.emit(str(self._dest_path))
 
 
 def _find_first(root: Path, filename_glob: str) -> Optional[str]:
@@ -249,6 +318,8 @@ class NewCaseDialog(QDialog):
         self._autodetected: dict = {"router_tools": {}, "detection": {}}
         self._batch_roots: list[Path] = []
         self._machine_checkboxes: dict[Path, QCheckBox] = {}
+        self._pending_archive_path: Optional[Path] = None
+        self._extraction_worker: Optional[_ExtractionWorker] = None
         self.generated_config_paths: list[Path] = []
         # Geriye donuk: eski cagiranlar tek yol bekleyebilir.
         self.generated_config_path: Optional[Path] = None
@@ -298,12 +369,12 @@ class NewCaseDialog(QDialog):
 
         footer = QHBoxLayout()
         footer.addStretch()
-        cancel_btn = SecondaryButton("Vazgeç")
-        cancel_btn.clicked.connect(self.reject)
-        create_btn = PrimaryButton("Vakayı Oluştur")
-        create_btn.clicked.connect(self._on_create)
-        footer.addWidget(cancel_btn)
-        footer.addWidget(create_btn)
+        self.cancel_btn = SecondaryButton("Vazgeç")
+        self.cancel_btn.clicked.connect(self.reject)
+        self.create_btn = PrimaryButton("Vakayı Oluştur")
+        self.create_btn.clicked.connect(self._on_create)
+        footer.addWidget(self.cancel_btn)
+        footer.addWidget(self.create_btn)
         outer.addLayout(footer)
 
     # -- Kart insaatcilari ---------------------------------------------------
@@ -334,9 +405,11 @@ class NewCaseDialog(QDialog):
             "Canlı sistem: TriageChain bu makinenin kendi diskinden toplar (VSS ile).\n"
             "Önceden toplanmış veri: KAPE gibi başka bir araçla ZATEN toplanmış bir "
             "klasörü ya da arşivi (ZIP/RAR/7z) içe aktarır -- canlı sisteme gerek "
-            "kalmaz. RAR/7z için makinede kurulu bir 7-Zip gerekir. Seçilen klasörün "
-            "altında birden fazla alt klasör bulunursa (örn. birden fazla makinenin "
-            "KAPE çıktısı), aşağıda hangilerinin ayrı vaka olacağını seçebilirsiniz."
+            "kalmaz. Arşiv seçtiyseniz ayrıca nereye çıkartılacağını da "
+            "seçmeniz gerekir (RAR/7z için makinede kurulu bir 7-Zip gerekir). "
+            "Seçilen kaynakta birden fazla alt klasör bulunursa (örn. birden "
+            "fazla makinenin KAPE çıktısı), aşağıda hangilerinin ayrı vaka "
+            "olacağını seçebilirsiniz."
         )
         hint.setWordWrap(True)
         hint.setStyleSheet(f"color:{t.TEXT_SECONDARY}; font-size:{t.SIZE_HELPER}px;")
@@ -344,7 +417,7 @@ class NewCaseDialog(QDialog):
 
         self.mode_group = QButtonGroup(card)
         self.live_radio = QRadioButton("Canlı sistem")
-        self.import_radio = QRadioButton("Önceden toplanmış veri (klasör veya ZIP)")
+        self.import_radio = QRadioButton("Önceden toplanmış veri (klasör veya arşiv)")
         for radio in (self.live_radio, self.import_radio):
             radio.setStyleSheet(f"color:{t.TEXT_MAIN}; font-size:{t.SIZE_BODY}px;")
             self.mode_group.addButton(radio)
@@ -355,12 +428,27 @@ class NewCaseDialog(QDialog):
         picker_row = QHBoxLayout()
         self._pick_folder_btn = SecondaryButton("Kök Klasör Seç…")
         self._pick_folder_btn.clicked.connect(self._on_pick_source_folder)
-        self._pick_zip_btn = SecondaryButton("Arşiv Seç… (ZIP/RAR/7z)")
-        self._pick_zip_btn.clicked.connect(self._on_pick_source_zip)
+        self._pick_archive_btn = SecondaryButton("1) Arşiv Dosyası Seç… (ZIP/RAR/7z)")
+        self._pick_archive_btn.clicked.connect(self._on_pick_archive_file)
         picker_row.addWidget(self._pick_folder_btn)
-        picker_row.addWidget(self._pick_zip_btn)
+        picker_row.addWidget(self._pick_archive_btn)
         picker_row.addStretch()
         card.body.addLayout(picker_row)
+
+        # Arsiv secildiginde devreye giren ikinci, AYRI ve GORUNUR adim --
+        # kullanici geri bildirdi: cikartma hedefi onceden tek bir buton
+        # tikladiktan hemen sonra otomatik/beklenmedik bicimde soruluyordu.
+        extract_row = QHBoxLayout()
+        self._pick_extract_dest_btn = SecondaryButton("2) Çıkartma Klasörü Seç…")
+        self._pick_extract_dest_btn.clicked.connect(self._on_pick_extract_dest)
+        self._pick_extract_dest_btn.setEnabled(False)
+        extract_row.addWidget(self._pick_extract_dest_btn)
+        extract_row.addStretch()
+        card.body.addLayout(extract_row)
+
+        self.extraction_progress = ProgressBar()
+        self.extraction_progress.hide()
+        card.body.addWidget(self.extraction_progress)
 
         self.source_path_label = MonoLabel("Henüz kaynak seçilmedi.")
         self.source_path_label.setWordWrap(True)
@@ -378,7 +466,8 @@ class NewCaseDialog(QDialog):
 
     def _on_mode_toggled(self, live_checked: bool) -> None:
         self._pick_folder_btn.setEnabled(not live_checked)
-        self._pick_zip_btn.setEnabled(not live_checked)
+        self._pick_archive_btn.setEnabled(not live_checked)
+        self._pick_extract_dest_btn.setEnabled(not live_checked and self._pending_archive_path is not None)
         if live_checked:
             self.source_path_label.setText("Canlı sistem seçildi -- ek bir kaynak gerekmez.")
         elif self._source_root is None:
@@ -390,50 +479,85 @@ class NewCaseDialog(QDialog):
         path = QFileDialog.getExistingDirectory(self, "Toplanmış veri kök klasörünü seç")
         if not path:
             return
+        self._pending_archive_path = None
+        self._pick_extract_dest_btn.setEnabled(False)
         self._set_source_root(Path(path))
 
-    def _on_pick_source_zip(self) -> None:
+    def _on_pick_archive_file(self) -> None:
         archive_path, _filter = QFileDialog.getOpenFileName(
-            self, "Arşiv seç", "",
+            self, "Arşiv dosyası seç", "",
             "Arşivler (*.zip *.rar *.7z);;ZIP (*.zip);;RAR (*.rar);;7z (*.7z)",
         )
         if not archive_path:
             return
+        self._pending_archive_path = Path(archive_path)
+        self._pick_extract_dest_btn.setEnabled(True)
+        self.source_path_label.setText(
+            f"Seçilen arşiv: {self._pending_archive_path.name} -- şimdi "
+            "'2) Çıkartma Klasörü Seç…' ile nereye çıkartılacağını seçin."
+        )
+
+    def _on_pick_extract_dest(self) -> None:
+        if self._pending_archive_path is None:
+            return
         dest = QFileDialog.getExistingDirectory(self, "Arşiv nereye çıkartılsın?")
         if not dest:
             return
-        dest_path = Path(dest)
+        self._start_extraction(self._pending_archive_path, Path(dest))
 
-        error = extract_archive(Path(archive_path), dest_path)
-        if error:
-            self._show_error(error)
-            return
-        if not self._extract_nested_zips(dest_path):
-            return
-        self._set_source_root(dest_path)
+    def _start_extraction(self, archive_path: Path, dest_path: Path) -> None:
+        """Cikartmayi arka plan is parcacigina devreder -- ana pencere donmaz.
+
+        Gercek kullanici verisiyle bulunan hata: bu is oncesinde senkron
+        calisiyordu, buyuk bir arsivde Windows pencereyi "Yanit Vermiyor"
+        gosteriyordu. Cikartma bitene kadar TUM secim/onay butonlari kapali
+        tutuluyor -- ayni anda ikinci bir cikartma baslatilamaz, diyalog da
+        kapatilamaz (bkz. _ExtractionWorker sinif notu).
+        """
+        self._set_extraction_controls_enabled(False)
+        self.extraction_progress.show()
+        self.extraction_progress.set_indeterminate()
+        self.source_path_label.setText(f"Çıkartılıyor: {archive_path.name}…")
+
+        self._extraction_worker = _ExtractionWorker(archive_path, dest_path, parent=self)
+        self._extraction_worker.succeeded.connect(self._on_extraction_succeeded)
+        self._extraction_worker.failed.connect(self._on_extraction_failed)
+        self._extraction_worker.start()
+
+    def _set_extraction_controls_enabled(self, enabled: bool) -> None:
+        for widget in (
+            self._pick_folder_btn, self._pick_archive_btn, self._pick_extract_dest_btn,
+            self.live_radio, self.import_radio, self.cancel_btn, self.create_btn,
+        ):
+            widget.setEnabled(enabled)
+        if enabled:
+            # _on_pick_archive_file zaten dogru ilk-durumu ayarlamisti;
+            # sadece "cikartma hedefi" butonunun bekleyen arsiv olmadan
+            # tekrar acilmamasini garanti ediyoruz.
+            self._pick_extract_dest_btn.setEnabled(self._pending_archive_path is not None)
+
+    def _on_extraction_succeeded(self, dest_path_str: str) -> None:
+        self.extraction_progress.hide()
+        self._set_extraction_controls_enabled(True)
+        self._pending_archive_path = None
+        self._pick_extract_dest_btn.setEnabled(False)
+        self._extraction_worker = None
+        self._set_source_root(Path(dest_path_str))
+
+    def _on_extraction_failed(self, message: str) -> None:
+        self.extraction_progress.hide()
+        self._set_extraction_controls_enabled(True)
+        self._extraction_worker = None
+        self._show_error(message)
 
     def _extract_nested_zips(self, dest_path: Path) -> bool:
-        """Cikartilan kokte DOGRUDAN duran ic ice .zip dosyalarini kendi
-        adlarinda alt klasorlere cikartir.
-
-        Gercek kullanici verisiyle bulundu: KAPE ciktisini paylasirken
-        kullanilan bir .rar, makineleri klasor olarak degil DOGRUDAN ic ice
-        birer .zip dosyasi olarak tasiyordu (orn. '2026-06-07T220139_user.zip'
-        -- klasor degil, dosya). Bu adim olmadan detect_machine_roots() hicbir
-        alt klasor bulamaz ve toplu mod hic devreye girmez. Ic ice arsiv
-        yoksa bu fonksiyon sessizce hicbir sey yapmaz.
-        """
-        nested = sorted(
-            p for p in dest_path.iterdir() if p.is_file() and p.suffix.lower() == ".zip"
-        )
-        for nested_zip in nested:
-            target = dest_path / nested_zip.stem
-            if target.exists():
-                continue
-            error = extract_archive(nested_zip, target)
-            if error:
-                self._show_error(f"'{nested_zip.name}' çıkartılamadı: {error}")
-                return False
+        """Geriye donuk ince sarmalayici: mantigin kendisi modul seviyesindeki
+        extract_nested_zips()'e tasindi (arka plan is parcacigindan da
+        cagrilabilsin diye) -- bu metot sadece Qt hata etiketine baglar."""
+        error = extract_nested_zips(dest_path)
+        if error:
+            self._show_error(error)
+            return False
         return True
 
     def _set_source_root(self, root: Path) -> None:
@@ -541,6 +665,15 @@ class NewCaseDialog(QDialog):
             self.tools_dir_label.setText(f"{self._tools_root}  ({found} araç/ayar bulundu)")
         else:
             self.tools_dir_label.setText(f"{self._tools_root}  (bilinen araç bulunamadı)")
+
+    def reject(self) -> None:
+        # Cikartma calisirken diyalog kapatilamaz -- arka plan is parcacigi
+        # hala calisan bir QDialog'a bagli kalirsa cokme riski dogar (Esc
+        # veya pencerenin X'i de reject() cagirir, bu yuzden burada
+        # engelleniyor, sadece "Vazgeç" butonunda degil).
+        if self._extraction_worker is not None:
+            return
+        super().reject()
 
     # -- Olusturma ------------------------------------------------------------
     def _show_error(self, message: str) -> None:

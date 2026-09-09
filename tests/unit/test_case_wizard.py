@@ -200,6 +200,93 @@ def test_extract_nested_zips_mevcut_hedefi_tekrar_cikartmaz(dialog, tmp_path):
     assert not (already / "C").exists()
 
 
+# -- Arka planda cikartma (_ExtractionWorker / _start_extraction) -----------
+# Gercek kullanici verisiyle bulunan hata: cikartma daha once GUI is
+# parcacigini bloke ediyordu, buyuk arsivlerde Windows pencereyi "Yanit
+# Vermiyor" gosteriyordu. Bu testler QFileDialog'a hic dokunmaz (_start_
+# extraction dogrudan cagrilir) -- worker.wait() ile is parcacigi bitirilir,
+# sonra processEvents() ile ana is parcacigina kuyruklanan sinyaller isletilir.
+
+def test_extraction_arka_planda_calisir_ve_kaynak_kokunu_ayarlar(dialog, tmp_path, qt_app):
+    source_zip = tmp_path / "kaynak.zip"
+    _make_zip(source_zip, {"C/marker.txt": "veri"})
+    dest = tmp_path / "hedef"
+
+    dialog._start_extraction(source_zip, dest)
+
+    assert dialog._pick_folder_btn.isEnabled() is False
+    assert dialog._pick_archive_btn.isEnabled() is False
+    assert dialog.create_btn.isEnabled() is False
+    assert not dialog.extraction_progress.isHidden()
+
+    assert dialog._extraction_worker.wait(5000)
+    qt_app.processEvents()
+
+    assert dialog._extraction_worker is None
+    assert dialog._pick_folder_btn.isEnabled() is True
+    assert dialog.create_btn.isEnabled() is True
+    assert dialog.extraction_progress.isHidden()
+    assert dialog._source_root == dest
+    assert (dest / "C" / "marker.txt").read_text(encoding="utf-8") == "veri"
+
+
+def test_extraction_hata_verirse_kontroller_geri_acilir(dialog, tmp_path, qt_app, monkeypatch):
+    monkeypatch.setattr(case_wizard, "find_seven_zip", lambda: None)
+    bozuk = tmp_path / "bozuk.zip"
+    bozuk.write_bytes(b"gecersiz zip icerigi")
+    dest = tmp_path / "hedef"
+
+    dialog._start_extraction(bozuk, dest)
+    assert dialog._extraction_worker.wait(5000)
+    qt_app.processEvents()
+
+    assert dialog._extraction_worker is None
+    assert not dialog.error_label.isHidden()
+    assert dialog._pick_folder_btn.isEnabled() is True
+    assert dialog._source_root is None
+
+
+def test_extraction_surerken_dialog_kapatilamaz(dialog, tmp_path, qt_app):
+    source_zip = tmp_path / "kaynak.zip"
+    _make_zip(source_zip, {"C/marker.txt": "veri"})
+    dest = tmp_path / "hedef"
+    dialog._start_extraction(source_zip, dest)
+
+    rejected_calls = []
+    dialog.rejected.connect(lambda: rejected_calls.append(True))
+    dialog.reject()
+    assert rejected_calls == []
+
+    assert dialog._extraction_worker.wait(5000)
+    qt_app.processEvents()
+
+    dialog.reject()
+    assert rejected_calls == [True]
+
+
+def test_ic_ice_zipli_gercek_senaryo_arka_planda_toplu_moda_gecer(dialog, tmp_path, qt_app):
+    """Gercek kullanici verisiyle bulunan tam senaryo: bir arsiv cikartilinca
+    kokte DOGRUDAN makine .zip dosyalari duruyor -- worker bunlari da
+    cikartip toplu modu tetiklemeli, hepsi tek is parcacigi calismasinda."""
+    import io
+
+    inner_buffer = io.BytesIO()
+    with zipfile.ZipFile(inner_buffer, "w") as inner:
+        inner.writestr("C/marker.txt", "user")
+
+    outer_zip = tmp_path / "disari.zip"
+    with zipfile.ZipFile(outer_zip, "w") as outer:
+        outer.writestr("2026-06-07T220139_user.zip", inner_buffer.getvalue())
+
+    dest = tmp_path / "hedef"
+    dialog._start_extraction(outer_zip, dest)
+    assert dialog._extraction_worker.wait(5000)
+    qt_app.processEvents()
+
+    assert dialog.error_label.isHidden()
+    assert (dest / "2026-06-07T220139_user" / "C" / "marker.txt").read_text() == "user"
+
+
 # -- Sihirbaz (Qt) ------------------------------------------------------------
 
 def test_tekli_kaynak_gecerli_yaml_uretir(dialog, tmp_path):
