@@ -25,15 +25,28 @@ def test_desteklenen_diller_kullanicinin_istedigi_sira_ve_kapsam():
     assert list(i18n.SUPPORTED_LANGUAGES.keys()) == ["tr", "en", "es", "de", "pt", "fr"]
 
 
-def test_dil_basligi_iki_dilde_birden_hangi_dil_secili_olursa_olsun():
-    """Kullanicinin acik istegi: dil secicinin kendi basligi, kullanici
-    henuz cevrilmemis bir dile gecmis olsa bile 'Dil' ya da 'Language'
-    kelimesini taniyabilsin diye HER ZAMAN ikisini birden gostermeli."""
-    assert i18n.STRINGS["tr"]["settings_language"] == "Dil / Language"
-    assert i18n.STRINGS["en"]["settings_language"] == "Dil / Language"
+def test_dil_basligi_aktif_dildeki_kelimeyi_ingilizceyle_esler():
+    """Kullanicinin acik istegi: baslik aktif dildeki 'dil' kelimesini
+    'Language' ile eslesin (henuz cevrilmemis bir dile gecilmis olsa bile),
+    TEK istisna Ingilizce'nin kendisi -- o zaman tekrar olmasin diye
+    sadece 'Language' gosterilir."""
+    i18n.set_language("tr")
+    assert i18n.language_heading() == "Dil / Language"
 
     i18n.set_language("en")
-    assert i18n.t("settings_language") == "Dil / Language"
+    assert i18n.language_heading() == "Language"
+
+    i18n.set_language("es")
+    assert i18n.language_heading() == "Idioma / Language"
+
+    i18n.set_language("de")
+    assert i18n.language_heading() == "Sprache / Language"
+
+    i18n.set_language("pt")
+    assert i18n.language_heading() == "Idioma / Language"
+
+    i18n.set_language("fr")
+    assert i18n.language_heading() == "Langue / Language"
 
 
 def test_set_language_ingilizceye_geciyor():

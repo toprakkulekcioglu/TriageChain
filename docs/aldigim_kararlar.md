@@ -1974,3 +1974,52 @@ değişince sidebar etiketleri değişiyor VE İngilizce etiketli butona
 tıklamak hâlâ doğru sayfayı açıyor (dispatch bozulmadı). Mevcut testlerdeki
 `nav_buttons[...]` referansları yeni İngilizce anahtarlara güncellendi.
 Tüm paket (262 test) yeşil.
+
+---
+
+## Dil başlığı: sabit "Dil / Language" yerine aktif dile göre hesaplanan başlık
+
+**Karar:** Bir önceki turda dil kartının başlığı SABİT "Dil / Language"
+yapılmıştı (hangi dil seçili olursa olsun aynı). Kullanıcı bunu daha da
+netleştirdi: İngilizce'deyken "Dil / Language" yerine SADECE "Language"
+(tekrar gereksiz), Portekizce'deyken "Idioma / Language" gibi -- yani
+başlık AKTİF DİLDEKİ "dil" kelimesini `Language` ile eşlemeli, statik bir
+metin olmamalı. `i18n.py`'ye `_LANGUAGE_WORD_IN_OWN_LANGUAGE` sözlüğü
+(tr/en/es/de/pt/fr'nin her birinde "dil" kelimesinin kendi dilindeki
+karşılığı) ve bunu `_current_language`'in HAM koduna göre hesaplayan
+`language_heading()` fonksiyonu eklendi -- `STRINGS` sözlüğüne konulmadı,
+çünkü `t()`'nin "çevrilmemiş dil EN'e düşer" davranışının AKSİNE, bu
+başlık çevrilmemiş bir dilde bile o dilin kendi kelimesini göstermeli.
+
+**Doğrulama:** `QWidget.grab()` ile Portekizce ve İngilizce seçiliyken
+render edilip görsel olarak doğrulandı -- Portekizce'de "Idioma /
+Language", İngilizce'de sadece "Language" (tekrarsız). Eski statik
+`settings_language` anahtarı kaldırıldı, testi 6 dilin hepsini kapsayacak
+şekilde genişletildi. Tüm paket (262 test) yeşil.
+
+---
+
+## README.md ve CHANGELOG.md güncel duruma getirildi (NVIDIA'ya değil, doğrudan kendim)
+
+**Karar:** README, projenin sadece faz 1-2+4-5'ini (toplama/custody/router/
+Hayabusa/rapor) anlatıyordu -- YARA, Chainsaw, capa, birleşik zaman
+çizelgesi, PySide6 GUI, "Yeni Vaka Oluştur" sihirbazı, içe aktarma modu,
+RAR/7z desteği, açık/koyu tema, çok dil altyapısı gibi bu oturumda (ve
+önceki oturumlarda) eklenen HİÇBİR şeyden bahsetmiyordu. Kullanıcının
+"NVIDIA'dan yardım alalım" önerisi daha önce bu iş için gündeme gelmişti,
+ama kullanıcının kendi NVIDIA yönlendirme kuralı ("ilgili projenin kendi
+dosyalarını okuma/yazma... gerektiren isler NVIDIA'ya yönlendirilmemeli")
+gereği bu iş -- projenin gerçek güncel durumunu doğru yansıtmak için
+`docs/ozellikler.md`/`docs/roadmap.md` okumayı gerektiriyor -- doğrudan
+kendim yazıldı, NVIDIA'ya hiç gönderilmedi.
+
+**Kapsam:** README'nin "Kapsam" bölümü sekiz alt bölüme ayrıldı (toplama,
+router, dört tespit motoru, birleşik zaman çizelgesi, raporlama, masaüstü
+arayüzü); "Kullanım" bölümüne GUI başlatma komutu + `yara-scan`/
+`chainsaw-scan`/`capa-scan` CLI komutları eklendi; "Belgeler" bölümüne
+`ozellikler.md`/`roadmap.md` linkleri eklendi. `CHANGELOG.md`'ye marka
+logosu, içe aktarma modu, MAX_PATH düzeltmesi, sihirbaz (toplu vaka +
+RAR/7z dahil), açık/koyu tema + çok dil altyapısı için yeni satırlar
+eklendi. GitHub repo açıklaması güncellenmedi -- bu ortamda kimlik
+doğrulamalı bir `gh`/API erişimi yok, kullanıcının kendisi güncellemesi
+gerekiyor.

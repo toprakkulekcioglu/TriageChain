@@ -4,32 +4,40 @@
 
 # TriageChain
 
-> Windows DFIR triage collector with a tamper-evident, hash-chained chain of custody.
-> Runtime dependencies: `pydantic`, `PyYAML`, and `pywin32` (Windows only, VSS).
+> Windows DFIR triage collector with a tamper-evident, hash-chained chain of
+> custody — collection, format conversion, four independent detection engines,
+> a unified timeline, offline HTML reporting, and a PySide6 desktop GUI.
+> Runtime dependencies: `pydantic`, `PyYAML`, `PySide6`, and `pywin32`
+> (Windows only, VSS).
 
 TriageChain, olay müdahalesi (DFIR) sırasında bir Windows sisteminden hızlı
 "triage" delili toplayan ve topladığı her dosya için kırılması tespit edilebilir
-bir gözetim zinciri (chain of custody) tutan bir komut satırı aracıdır.
+bir gözetim zinciri (chain of custody) tutan bir araçtır — hem komut satırından
+hem tam işlevli bir masaüstü uygulamasından (`triagechain-gui`) kullanılabilir.
 
-## Kapsam (Faz 1–2 + Faz 4–5)
+## Kapsam
 
-Şu an çalışan kısım — **toplama ve gözetim zinciri (faz 1)**:
+**Toplama ve gözetim zinciri:**
 
 - **Hedef seçimi** — pakete gömülü katalogdan ($MFT, registry kovanları,
   `.evtx` olay günlükleri, prefetch) hedef seçme; `%WinDir%` gibi ortam
   değişkenleri ve `C:\Users\*\NTUSER.DAT` gibi glob'lar çözülür.
 - **Toplama** — dosyalar akış halinde okunur, kopyalanırken hash'lenir,
-  yazıldıktan sonra yeniden hash'lenip karşılaştırılır.
+  yazıldıktan sonra yeniden hash'lenip karşılaştırılır. Windows'un 260
+  karakter `MAX_PATH` sınırı `\\?\` uzun-yol önekiyle aşılır.
 - **VSS** — kilitli dosyalar için Volume Shadow Copy, `pywin32` ile WMI'nin
   `Win32_ShadowCopy.Create()` metodu doğrudan çağrılarak oluşturulur ve iş
-  bitince silinir. `pywin32` yalnızca Windows'ta kurulur ve yalnızca burada
-  kullanılır.
+  bitince silinir.
+- **İçe aktarma modu** — canlı bir sisteme ihtiyaç yok: KAPE gibi başka bir
+  araçla ZATEN toplanmış bir klasör/ZIP/RAR/7z de (`collection.source_root`)
+  analiz edilebilir; bu modda VSS hiç açılmaz.
+- **Çoklu disk desteği** — `collection.additional_volumes` ile ek disklerin
+  `$MFT`'si de toplanır.
 - **Chain of custody** — her olay, bir önceki kaydın hash'ine bağlanarak
-  yalnızca ekleme yapılan bir JSONL defterine yazılır; defter sonradan
-  bağımsız olarak doğrulanabilir.
-- **Manifest** — kosunun tamamı `manifest.json` olarak diske yazılır.
+  yalnızca ekleme yapılan bir JSONL defterine yazılır (çoklu-yazıcı güvenli,
+  dosya kilitleme ile); defter sonradan bağımsız olarak doğrulanabilir.
 
-Ve **yönlendirme/format dönüştürme (faz 2)**:
+**Yönlendirme/format dönüştürme:**
 
 - **Router** — `manifest.json`'daki her artefakt tipine göre doğru açık kaynak
   Eric Zimmerman aracına gönderilir (`mft` → MFTECmd, `registry_*` → RECmd,
@@ -45,34 +53,56 @@ Ve **yönlendirme/format dönüştürme (faz 2)**:
 - **Denetim izi** — her aracın stdout/stderr çıktısı diske yazılır, yolları ve
   çıkış kodu hem `routing_manifest.json`'a hem gözetim zincirine işlenir.
 
-Ve **Sigma kural tabanlı tespit (faz 4)**:
+**Dört bağımsız tespit motoru:**
 
-- **Hayabusa** — toplanan `.evtx` dosyaları Hayabusa'ya verilip Sigma kuralları
-  ile taranır; bulgular `detection_manifest.json`'a, aracın ham CSV çıktısı
-  vakanın ağacına yazılır. Çağrı sözdizimi ve CSV sütun eşlemesi kod değil
-  veridir: `detection/catalog/hayabusa_args.yaml`.
-- **En iyi çaba ayrıştırma** — Hayabusa sürümünüzün çıktı başlıkları farklıysa
-  koşu düşmez: 0 bulgu + bir uyarı kaydedilir, ham CSV yerinde durur.
-- **Güvenlik** — router ile birebir aynı dört kural geçerlidir.
+- **Hayabusa** ve **Chainsaw** — toplanan `.evtx` dosyaları Sigma kurallarıyla
+  taranır; İKİ BAĞIMSIZ motor AYNI kural setiyle çalıştırılıp sonuçların
+  örtüşüp örtüşmediği (`detection/correlation.py`) görülür.
+- **YARA** — statik imza taraması.
+- **capa** — PE dosyaları üzerinde otomatik davranış/yetenek analizi
+  (`collection.suspicious_binaries` ile analistin gösterdiği dosyalarda);
+  bilerek risk skoruna katılmaz, çünkü "yetenek" tespit eder, kötü amaçlı
+  davranış değil.
+- **En iyi çaba ayrıştırma** — bir aracın çıktı başlıkları farklıysa koşu
+  düşmez: 0 bulgu + bir uyarı kaydedilir, ham çıktı yerinde durur.
 - **Gözetim zinciri** — bulgu başına değil, taranan dosya başına tek bir özet
-  olay yazılır; `detection_manifest.json`'ın SHA-256'sı kapanış olayına işlenir.
+  olay yazılır; her manifestin SHA-256'sı kapanış olayına işlenir.
 
-Ve **otomatik raporlama (faz 5)**:
+**Birleşik zaman çizelgesi:**
 
-- **Tek komut, iki çıktı** — `triagechain report`, toplama/yönlendirme/tespit
-  manifestlerini ve gözetim zincirinin tam olay listesini `report.json`
-  (makine-okur) + `report.html` (insan-okur, tek sayfa) içinde birleştirir.
+- MFTECmd/RECmd/EvtxECmd/PECmd çıktılarından (yeni bir dış araç eklemeden)
+  kronolojik tek bir liste — Plaso'nun ~600 ayrıştırıcısının yerini TUTMAZ,
+  sadece TriageChain'in zaten topladığı dört kaynağı birleştirir.
+
+**Otomatik raporlama:**
+
+- **Tek komut, iki çıktı** — `triagechain report`, tüm manifestleri ve
+  gözetim zincirinin tam olay listesini `report.json` (makine-okur) +
+  `report.html` (insan-okur, tek sayfa, Yönetici/Uzman iki sekmeli) içinde
+  birleştirir.
 - **Tamamen offline HTML** — harici CDN/font/script/stil yoktur; olay yerinde
   internetsiz bir makinede açılır. En üstte büyük ve renkli bir "Zincir Durumu:
   GEÇERLİ / GEÇERSİZ" göstergesi bulunur.
-- **Raporun kendi bütünlüğü** — yanına `report.json.sha256` yazılır
-  (`<hash>  report.json`), böylece raporun sonradan değiştirilip
-  değiştirilmediği `sha256sum -c` ile kontrol edilebilir.
+- **Raporun kendi bütünlüğü** — yanına `report.json.sha256` yazılır.
 - **Kısmi çalıştırmaya dayanıklı** — `route`/`detect` hiç çalıştırılmadıysa
-  raporun o bölümü "henüz çalıştırılmadı" der. Rapor katmanı gözetim zincirine
-  **yazmaz**, yalnızca okur.
+  raporun o bölümü "henüz çalıştırılmadı" der.
 
-Henüz yok: dış sistem adaptörleri (`integrations/`).
+**Masaüstü arayüzü (`triagechain-gui`):**
+
+- PySide6 ile yazılmış, sekiz sayfalı (Dashboard, Toplanan Dosyalar, Delil
+  Zinciri, Bulgular, Raporlar, Vakalar, Zaman Çizelgesi, Ayarlar) tek pencereli
+  bir uygulama; gömülü Inter/JetBrains Mono fontları, standalone `.exe` olarak
+  paketlenir (`triagechain_gui.spec`).
+- **"Yeni Vaka Oluştur" sihirbazı** — KAPE'nin kendi arayüzündeki
+  kaynak/hedef seçim deneyimini taklit eder: kullanıcı dosya/klasör seçer,
+  YAML konfigürasyonu arka planda üretilir (hiç elle yazılmaz). ZIP/RAR/7z
+  arşivleri otomatik çıkartılır (arka planda, arayüz donmadan); bir arşivde
+  birden fazla makine varsa hepsi tek seferde ayrı vaka olarak oluşturulabilir.
+- **Açık/koyu tema + çok dil desteği** — Ayarlar sayfasında anında geçiş.
+  Şu an TR + EN tam çevrili; ES/DE/PT/FR seçilebilir ama henüz çevrilmedi.
+
+Henüz yok: dış sistem adaptörleri (`integrations/`), Plaso entegrasyonu
+(bilerek ertelendi — bkz. `docs/roadmap.md`).
 
 ## Kurulum
 
@@ -84,6 +114,19 @@ pip install -e .[dev]
 
 ## Kullanım
 
+### Masaüstü arayüzü
+
+```bash
+triagechain-gui
+```
+
+"Yeni Vaka Oluştur" sihirbazı elle YAML yazmadan (kaynak dosya/klasör seçerek)
+bir vaka oluşturur; alternatif olarak elle hazırlanmış bir `.yaml` da
+yüklenebilir. Toplama/yönlendirme/tespit/rapor adımlarının hepsi arayüzden
+tek tıkla çalıştırılabilir.
+
+### Komut satırı
+
 ```bash
 # Toplama
 triagechain collect --config config/triagechain.example.yaml
@@ -91,10 +134,15 @@ triagechain collect --config config/triagechain.example.yaml
 # Toplananları ayrıştırma araçlarına yönlendirme
 triagechain route --config config/triagechain.example.yaml
 
-# Olay günlüklerini Sigma kurallarıyla tarama
+# Olay günlüklerini Sigma kurallarıyla tarama (iki bağımsız motor)
 triagechain detect --config config/triagechain.example.yaml
+triagechain chainsaw-scan --config config/triagechain.example.yaml
 
-# Rapor üretme (JSON + tek sayfa HTML)
+# Statik imza taraması ve PE yetenek analizi
+triagechain yara-scan --config config/triagechain.example.yaml
+triagechain capa-scan --config config/triagechain.example.yaml
+
+# Rapor üretme (JSON + tek sayfa HTML, zaman çizelgesi dahil)
 triagechain report --config config/triagechain.example.yaml
 
 # Gözetim zincirini doğrulama
@@ -130,9 +178,11 @@ Tools ikilisi ya da Hayabusa kurulumu gerektirmez: `subprocess.run`
 
 ## Belgeler
 
+- [docs/ozellikler.md](docs/ozellikler.md) — tüm özelliklerin ayrıntılı listesi
 - [docs/architecture.md](docs/architecture.md) — mimari ve tasarım kararları
 - [docs/chain_of_custody.md](docs/chain_of_custody.md) — hash zinciri şeması
 - [docs/config_reference.md](docs/config_reference.md) — konfigürasyon alanları
+- [docs/roadmap.md](docs/roadmap.md) — yapılanlar / sıradaki işler
 
 ## Lisans
 

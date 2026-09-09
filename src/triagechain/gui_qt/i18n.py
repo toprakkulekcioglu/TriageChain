@@ -62,11 +62,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "settings_appearance": "Görünüm",
         "settings_theme_dark": "Koyu",
         "settings_theme_light": "Açık",
-        # Bilerek IKI DILDE BIRDEN: bu baslik, dil secicinin KENDISI --
-        # kullanici hangi dili secili olursa olsun (orn. henuz cevrilmemis
-        # bir dile yanlislikla gecmisse) buraya donup "Dil" ya da "Language"
-        # kelimesini TANIYABILMELI (kullanicinin acik istegi).
-        "settings_language": "Dil / Language",
         "settings_language_hint": (
             "Türkçe ve İngilizce tam çevrilidir. Arayüzün geri kalanının "
             "(sayfa içerikleri) çevirisi henüz eklenmedi -- şimdilik yalnızca "
@@ -95,7 +90,6 @@ STRINGS: dict[str, dict[str, str]] = {
         "settings_appearance": "Appearance",
         "settings_theme_dark": "Dark",
         "settings_theme_light": "Light",
-        "settings_language": "Dil / Language",
         "settings_language_hint": (
             "Turkish and English are fully translated. The rest of the "
             "interface (page content) isn't translated yet -- for now only "
@@ -108,12 +102,37 @@ STRINGS: dict[str, dict[str, str]] = {
     },
 }
 
+# Dil secici basliginin ozel durumu: kullanicinin acik istegi -- baslik
+# aktif dil ne olursa olsun (henuz cevrilmemis bir dil dahil) o dildeki
+# "dil" kelimesini TANIYABILMELI, hep "Language" (Ingilizce, ortak referans)
+# ile eslenmis. STRINGS'e KONULMADI cunku degeri _current_language'in HAM
+# kodundan (t()'nin dustugu EN'den DEGIL) hesaplanmasi gerekiyor -- bkz.
+# language_heading().
+_LANGUAGE_WORD_IN_OWN_LANGUAGE: dict[str, str] = {
+    "tr": "Dil",
+    "en": "Language",
+    "es": "Idioma",
+    "de": "Sprache",
+    "pt": "Idioma",
+    "fr": "Langue",
+}
+
 _current_language = "tr"
 
 
 def set_language(lang: str) -> None:
     global _current_language
     _current_language = lang if lang in SUPPORTED_LANGUAGES else "tr"
+
+
+def language_heading() -> str:
+    """Dil secici kartinin basligi: '<aktif dildeki "dil" kelimesi> /
+    Language' -- aktif dil zaten Ingilizce'yse tekrar olmasin diye sadece
+    'Language' doner."""
+    native = _LANGUAGE_WORD_IN_OWN_LANGUAGE.get(_current_language, "Language")
+    if native == "Language":
+        return "Language"
+    return f"{native} / Language"
 
 
 def get_language() -> str:

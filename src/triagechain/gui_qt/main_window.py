@@ -1187,7 +1187,7 @@ class TriageChainWindow(QMainWindow):
         appearance_card.body.addLayout(theme_row)
         layout.addWidget(appearance_card)
 
-        language_card = Card(i18n.t("settings_language"))
+        language_card = Card(i18n.language_heading())
         self.language_combo = QComboBox()
         self.language_combo.setStyleSheet(f"""
             QComboBox {{
