@@ -1781,3 +1781,45 @@ bitince butonlar/ilerleme çubuğu geri açılıyor, 3 makine doğru tespit
 ediliyor. 4 yeni test eklendi (arka plan tamamlanma, hata yolu, çıkartma
 sırasında `reject()` engeli, iç içe zip'li tam senaryo — `QThread.wait()` +
 `processEvents()` ile senkronize edilerek). Tüm paket (225 test) yeşil.
+
+---
+
+## Sihirbazda "Çıktı Dizini seçemiyoruz" -- gerçek bir yatay taşma hatası
+
+**Karar:** Kullanıcı bir ekran görüntüsüyle "buradan seçemiyoruz" dedi;
+görüntüde "Çıktı Dizini" kartında sadece başlık + "Henüz seçilmedi." vardı,
+buton görünmüyordu. Kod okuyarak emin olunamadı — bu masaüstü uygulamasını
+görsel olarak inceleyecek bir araç yok, bu yüzden `QT_QPA_PLATFORM=offscreen`
+altında GERÇEK sihirbaz penceresi kuruldu (embedded font'lar da yüklenerek,
+`app.py`'nin gerçek başlatma sırasıyla birebir), `QWidget.grab()` ile PNG'ye
+render edilip görsel olarak incelendi -- Qt'nin `grab()`'ı offscreen platform
+altında bile gerçek bir pixmap üretebiliyor, bu ekransız bir masaüstü GUI
+hatasını GÖREREK doğrulamak için kullanılabilecek genel bir teknik.
+
+**Bulunan kök neden (iki parça):** (1) `_build_targets_card`, 9 artefaktı
+2 sütunlu bir `QGridLayout`'a diziyordu; `QCheckBox` metni Qt'de kendiliğinden
+satır KIRMAZ, ve katalogdaki açıklamalar (`default_targets.yaml`) uzun --
+iki sütun yan yana bu satırları dialog'un sabit genişliğinin (660-700px)
+çok üzerine taşırdı. (2) `_build_output_card`/`_build_tools_card`, sonuç
+etiketini (`stretch=1`) ve butonu AYNI yatay satırda, etiket ÖNCE buton
+SONRA sırayla diziyordu -- paylaşılan `QVBoxLayout` (tüm kartlar aynı
+genişliği paylaşır) (1)'deki taşma yüzünden zaten dialog'un görünür
+genişliğinden çok daha geniş olunca, etiket stretch=1 ile bu fazla genişliği
+kendine alıyor, buton görünür alanın çok ötesine (yatay kaydırma gerektiren
+bir bölgeye) itiliyordu. İki hata birbirini besliyordu: (1) olmasa (2) fark
+edilmezdi.
+
+**Düzeltme:** `_build_targets_card` tek sütuna çevrildi (9 onay kutusu alt
+alta) -- iki widget'ın aynı satırda yan yana durmasından kaynaklanan
+genişlik ikiye katlanması ortadan kalktı. `_build_output_card`/
+`_build_tools_card`'da buton ve etiket ayrı satırlara ayrıldı (buton
+kendi satırında sola yaslı + stretch, etiket ALTTA kendi satırında,
+tamamen "Kaynak" kartının zaten doğru çalışan desenine uyumlu) -- böylece
+etiketin ne kadar uzun bir yol göstereceği artık butonun konumunu HİÇ
+etkilemiyor.
+
+**Doğrulama:** Aynı `grab()` tekniğiyle hem dar (700x700, gerçek varsayılan
+boyuta yakın) hem geniş (1400px) pencerede yeniden render edildi -- dar
+pencerede artık YATAY kaydırma çubuğu YOK (önceden vardı), "Klasör Seç…"
+ve "Araç Klasörü Seç…" butonlarının ikisi de görünür alanda. Tüm paket
+(225 test, davranış değişikliği yok, sadece layout) yeşil.

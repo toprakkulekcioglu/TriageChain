@@ -594,15 +594,24 @@ class NewCaseDialog(QDialog):
             self._batch_layout.addWidget(box, index // 2, index % 2)
 
     def _build_output_card(self) -> Card:
+        # Buton ONCE, sonucu gosteren etiket AYRI bir satirda ALTTA -- "Kaynak"
+        # kartiyla ayni desen. Onceki surumde ikisi TEK satirda, etiket
+        # stretch=1 ile yan yanaydi: etiket uzun bir yol gosterince (veya
+        # baska bir kartin genisligi tum dialog'u zorlayinca, bkz.
+        # _build_targets_card notu) buton goruntu disina itiliyordu --
+        # kullanici "buradan seçemiyoruz" diye bildirdi, gercek/tekrar
+        # uretilebilir bir hataydi (bkz. aldigim_kararlar.md).
         card = Card("Çıktı Dizini")
-        row = QHBoxLayout()
-        self.output_dir_label = MonoLabel("Henüz seçilmedi.")
-        self.output_dir_label.setWordWrap(True)
+        btn_row = QHBoxLayout()
         pick_btn = SecondaryButton("Klasör Seç…")
         pick_btn.clicked.connect(self._on_pick_output_dir)
-        row.addWidget(self.output_dir_label, stretch=1)
-        row.addWidget(pick_btn)
-        card.body.addLayout(row)
+        btn_row.addWidget(pick_btn)
+        btn_row.addStretch()
+        card.body.addLayout(btn_row)
+
+        self.output_dir_label = MonoLabel("Henüz seçilmedi.")
+        self.output_dir_label.setWordWrap(True)
+        card.body.addWidget(self.output_dir_label)
         return card
 
     def _on_pick_output_dir(self) -> None:
@@ -613,22 +622,23 @@ class NewCaseDialog(QDialog):
         self.output_dir_label.setText(str(self._output_dir))
 
     def _build_targets_card(self) -> Card:
+        # TEK sutun -- QCheckBox metni Qt'de kendiliginden satir kirmaz, iki
+        # sutunlu bir grid bu uzun aciklama metinlerini yan yana koyunca
+        # (bkz. default_targets.yaml'daki aciklamalar) toplam genislik
+        # dialog'un sabit genisligini asiyordu; tasan icerik TUM dialog'un
+        # (paylasilan QVBoxLayout genisligi yuzunden) diger kartlardaki
+        # butonlari da goruntu disina itiyordu -- bkz. _build_output_card
+        # notu, kullanicinin bildirdigi gercek hata.
         card = Card("Toplanacak Artefaktlar")
         catalog = load_catalog(catalog_module.default_catalog_path())
         self.target_checkboxes: dict[str, QCheckBox] = {}
-        grid = QGridLayout()
-        grid.setHorizontalSpacing(16)
-        grid.setVerticalSpacing(6)
-        for index, (target_id, entry) in enumerate(catalog.items()):
+        for target_id, entry in catalog.items():
             box = QCheckBox(entry.get("description", target_id))
             box.setChecked(True)
             box.setStyleSheet(f"color:{t.TEXT_MAIN}; font-size:{t.SIZE_HELPER}px;")
             box.setToolTip(target_id)
             self.target_checkboxes[target_id] = box
-            grid.addWidget(box, index // 2, index % 2)
-        wrap = QWidget()
-        wrap.setLayout(grid)
-        card.body.addWidget(wrap)
+            card.body.addWidget(box)
         return card
 
     def _build_tools_card(self) -> Card:
@@ -644,14 +654,16 @@ class NewCaseDialog(QDialog):
         hint.setStyleSheet(f"color:{t.TEXT_SECONDARY}; font-size:{t.SIZE_HELPER}px;")
         card.body.addWidget(hint)
 
-        row = QHBoxLayout()
-        self.tools_dir_label = MonoLabel("Henüz seçilmedi.")
-        self.tools_dir_label.setWordWrap(True)
+        btn_row = QHBoxLayout()
         pick_btn = SecondaryButton("Araç Klasörü Seç…")
         pick_btn.clicked.connect(self._on_pick_tools_dir)
-        row.addWidget(self.tools_dir_label, stretch=1)
-        row.addWidget(pick_btn)
-        card.body.addLayout(row)
+        btn_row.addWidget(pick_btn)
+        btn_row.addStretch()
+        card.body.addLayout(btn_row)
+
+        self.tools_dir_label = MonoLabel("Henüz seçilmedi.")
+        self.tools_dir_label.setWordWrap(True)
+        card.body.addWidget(self.tools_dir_label)
         return card
 
     def _on_pick_tools_dir(self) -> None:
