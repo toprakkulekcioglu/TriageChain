@@ -1901,3 +1901,41 @@ patlamaması), `test_gui_qt.py`'ye eklenen 6 yeni entegrasyon testi (radio/
 combo değişince gerçek pencere durumu, tema geçişinin Dashboard'a da
 yansıması, dil acilir listesinin format/sıra doğruluğu). Tüm paket
 (258 test) yeşil.
+
+---
+
+## MonoLabel'ın markaya uymayan mavi odak çerçevesi düzeltildi + "Dil / Language" başlığı
+
+**Karar:** Kullanıcı gerçek bir ekran görüntüsüyle "buranın tasarımı çok
+sırıtıyor, bağırıyor" dedi -- görüntüde sidebar'daki "AKTİF VAKA" kutusunu
+SARAN, markanın yeşil paletiyle hiç uyuşmayan kalın, mavi bir çerçeve
+vardı. Kök neden: `MonoLabel` (hash gibi salt-okunur değerlerin klavyeyle
+de seçilebilmesi için `FocusPolicy.StrongFocus` alan bileşen) kendi
+`:focus` QSS kuralını hiç TANIMLAMIYORDU -- widget klavye odağı alınca
+(burada: pencere ilk açıldığında sekme sırasındaki ilk odaklanabilir
+widget olduğu için otomatik) Qt/Windows kendi HAM varsayılan odak
+dikdörtgenini çiziyordu, ki bu her zaman sistem/Windows mavisi, uygulamanın
+kendi paletinden tamamen bağımsız. `Input`/`PrimaryButton` gibi diğer
+bileşenler zaten KENDİ `:focus` stillerini tanımlıyordu (bkz. widgets.py),
+`MonoLabel` bu adımı hiç atmamıştı -- proje çapında `MonoLabel` kullanılan
+HER yerde (sidebar vaka kimliği, wizard'daki yol etiketleri, dashboard'daki
+mono değerler) aynı sorun potansiyel olarak vardı.
+
+**Düzeltme:** `MonoLabel`'e `QLabel:focus { border: 1px solid
+{t.ACCENT_TEXT}; }` eklendi (dinlenme halinde `border: 1px solid
+transparent;` ile aynı boyutu koruyup sıçrama olmadan) -- artık odak
+göstergesi markanın kendi yeşiliyle tutarlı, ince bir çerçeve.
+
+**"Dil / Language" başlığı:** Kullanıcının ayrı isteği: dil seçici
+kartının başlığı, hangi dil seçili olursa olsun (özellikle henüz
+çevrilmemiş bir dile geçilmişse) "Dil" ya da "Language" kelimesini
+tanınabilir kılmak için BİLEREK iki dilde birden ("Dil / Language") --
+tek bir sabit değer, `i18n.py`'de hem `tr` hem `en` altında aynı.
+
+**Doğrulama:** `QWidget.grab()` ile `case_pill`'e programatik olarak
+klavye odağı verilip (`setFocus()`) render edildi -- önceki mavi kutunun
+yerini ince yeşil bir çerçeve aldı, görsel olarak doğrulandı. Yeni
+`tests/unit/test_widgets.py` (2 test: `MonoLabel` klavyeyle odaklanabilir
+kalıyor + kendi stylesheet'inde `QLabel:focus`/`ACCENT_TEXT` kuralını
+taşıyor -- regresyon kilidi), `test_i18n.py`'ye 1 yeni test ("Dil /
+Language" her iki dilde de aynı). Tüm paket (261 test) yeşil.

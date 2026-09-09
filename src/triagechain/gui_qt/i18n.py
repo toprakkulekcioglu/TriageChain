@@ -49,7 +49,11 @@ STRINGS: dict[str, dict[str, str]] = {
         "settings_appearance": "Görünüm",
         "settings_theme_dark": "Koyu",
         "settings_theme_light": "Açık",
-        "settings_language": "Dil",
+        # Bilerek IKI DILDE BIRDEN: bu baslik, dil secicinin KENDISI --
+        # kullanici hangi dili secili olursa olsun (orn. henuz cevrilmemis
+        # bir dile yanlislikla gecmisse) buraya donup "Dil" ya da "Language"
+        # kelimesini TANIYABILMELI (kullanicinin acik istegi).
+        "settings_language": "Dil / Language",
         "settings_language_hint": (
             "Türkçe ve İngilizce tam çevrilidir. Arayüzün geri kalanının "
             "(sayfa içerikleri) çevirisi henüz eklenmedi -- şimdilik yalnızca "
@@ -67,7 +71,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "settings_appearance": "Appearance",
         "settings_theme_dark": "Dark",
         "settings_theme_light": "Light",
-        "settings_language": "Language",
+        "settings_language": "Dil / Language",
         "settings_language_hint": (
             "Turkish and English are fully translated. The rest of the "
             "interface (page content) isn't translated yet -- for now only "

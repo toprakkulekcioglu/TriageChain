@@ -163,6 +163,13 @@ class MonoLabel(QLabel):
     Klavye ile de secilebilir: hash gibi bir degeri fare kullanmayan biri de
     kopyalayabilmeli (chameleon'un erisilebilirlik denetiminde bulunmustu;
     TextInteractionFlags tek basina yetmiyor, FocusPolicy de gerekiyor).
+
+    ONEMLI: StrongFocus'un kendisi bir `:focus` QSS kurali GEREKTIRIR --
+    yoksa Qt/Windows kendi HAM (uygulamanin yesil paletiyle hic
+    uyusmayan, mavi) varsayilan odak dikdortgenini ciziyor. Kullanici
+    gercek bir ekran goruntusunde bunu ("tasarim sirittiginda/bagirdiginda")
+    bulup bildirdi -- sidebar'daki vaka kimligi kutusunu SARAN, markaya
+    uymayan mavi bir cerceve olarak gorunuyordu (bkz. aldigim_kararlar.md).
     """
 
     def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
@@ -173,6 +180,11 @@ class MonoLabel(QLabel):
                 font-family: "{t.FONT_MONO}";
                 font-size: {t.SIZE_HELPER}px;
                 background: transparent;
+                border: 1px solid transparent;
+                border-radius: {t.RADIUS_SM}px;
+            }}
+            QLabel:focus {{
+                border: 1px solid {t.ACCENT_TEXT};
             }}
         """)
         self.setTextInteractionFlags(

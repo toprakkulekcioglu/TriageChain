@@ -25,6 +25,17 @@ def test_desteklenen_diller_kullanicinin_istedigi_sira_ve_kapsam():
     assert list(i18n.SUPPORTED_LANGUAGES.keys()) == ["tr", "en", "es", "de", "pt", "fr"]
 
 
+def test_dil_basligi_iki_dilde_birden_hangi_dil_secili_olursa_olsun():
+    """Kullanicinin acik istegi: dil secicinin kendi basligi, kullanici
+    henuz cevrilmemis bir dile gecmis olsa bile 'Dil' ya da 'Language'
+    kelimesini taniyabilsin diye HER ZAMAN ikisini birden gostermeli."""
+    assert i18n.STRINGS["tr"]["settings_language"] == "Dil / Language"
+    assert i18n.STRINGS["en"]["settings_language"] == "Dil / Language"
+
+    i18n.set_language("en")
+    assert i18n.t("settings_language") == "Dil / Language"
+
+
 def test_set_language_ingilizceye_geciyor():
     i18n.set_language("en")
 
