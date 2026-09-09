@@ -168,14 +168,14 @@ def test_tum_sidebar_sayfalari_farkli_indekse_gidiyor(qt_app, config_path):
         index = window.stack.currentIndex()
         assert index not in seen_indexes
         seen_indexes.add(index)
-    window.nav_buttons["Dashboard"].click()
+    window.nav_buttons["dashboard"].click()
     assert window.stack.currentIndex() == 0
 
 
 def test_toplanan_dosyalar_sayfasi_vaka_yuklenmeden(qt_app, config_path):
     """Vaka yuklenmeden sayfa cokmemeli, bos/durum mesaji gostermeli."""
     window = TriageChainWindow()
-    window.nav_buttons["Toplanan Dosyalar"].click()
+    window.nav_buttons["files"].click()
     assert window.stack.currentIndex() == 1
     assert window.files_table.rowCount() == 0
     assert "yüklenmedi" in window.files_subtitle.text()
@@ -196,7 +196,7 @@ def test_toplanan_dosyalar_sayfasi_gercek_veri(qt_app, config_path):
 def test_delil_zinciri_sayfasi_vaka_yuklenmeden(qt_app, config_path):
     """Vaka yuklenmeden sayfa cokmemeli, bos/durum mesaji gostermeli."""
     window = TriageChainWindow()
-    window.nav_buttons["Delil Zinciri"].click()
+    window.nav_buttons["custody"].click()
     assert window.stack.currentIndex() == 2
     assert window.custody_table.rowCount() == 0
     assert window.custody_badge.text() == "Henüz vaka yüklenmedi"
@@ -218,7 +218,7 @@ def test_delil_zinciri_sayfasi_tam_liste(qt_app, config_path):
 def test_bulgular_sayfasi_vaka_yuklenmeden(qt_app, config_path):
     """Vaka yuklenmeden sayfa cokmemeli, bos/durum mesaji gostermeli."""
     window = TriageChainWindow()
-    window.nav_buttons["Bulgular"].click()
+    window.nav_buttons["findings"].click()
     assert window.stack.currentIndex() == 3
     assert window.findings_table.rowCount() == 0
     assert "yüklenmedi" in window.findings_subtitle.text()
@@ -349,7 +349,7 @@ def test_bulgular_sayfasi_capa_calismamissa_bos_not_gosterir(qt_app, config_path
 def test_raporlar_sayfasi_vaka_yuklenmeden(qt_app, config_path):
     """Vaka yuklenmeden sayfa cokmemeli, bos/durum mesaji gostermeli."""
     window = TriageChainWindow()
-    window.nav_buttons["Raporlar"].click()
+    window.nav_buttons["reports"].click()
     assert window.stack.currentIndex() == 4
     assert window.reports_card.isHidden()
     assert window.report_chain_badge.text() == "Henüz vaka yüklenmedi"
@@ -400,7 +400,7 @@ def test_raporlar_sayfasi_gercek_veri(qt_app, config_path):
 def test_zaman_cizelgesi_sayfasi_vaka_yuklenmeden(qt_app, config_path):
     """Vaka yuklenmeden sayfa cokmemeli, bos/durum mesaji gostermeli."""
     window = TriageChainWindow()
-    window.nav_buttons["Zaman Çizelgesi"].click()
+    window.nav_buttons["timeline"].click()
     assert window.stack.currentIndex() == 6
     assert window.timeline_table.rowCount() == 0
     assert "yüklenmedi" in window.timeline_subtitle.text()
@@ -525,7 +525,7 @@ def _case_id_at(window, row):
 def test_vakalar_sayfasi_vaka_yuklenmeden(qt_app, config_path):
     """Config yuklenmeden output_dir bilinmiyor -- liste bos kalmali, cokmemeli."""
     window = TriageChainWindow()
-    window.nav_buttons["Vakalar"].click()
+    window.nav_buttons["cases"].click()
     assert window.stack.currentIndex() == 5
     assert window.cases_table.rowCount() == 0
 
@@ -649,6 +649,26 @@ def test_dil_secimi_pencere_basligini_degistiriyor(qt_app):
     assert i18n.get_language() == "en"
     assert window.windowTitle() == "TriageChain Console"
     assert window.stack.currentIndex() == 7
+
+
+def test_dil_secimi_sidebar_etiketlerini_de_degistiriyor(qt_app):
+    """Sidebar navigasyon etiketleri artik SABIT Ingilizce kimliklerle
+    (SIDEBAR_PAGES) dispatch edilip GORUNEN metni i18n.t()'den alan --
+    dil degisince hem etiketler hem ic dispatch (nav_buttons anahtarlari)
+    dogru calismali."""
+    window = TriageChainWindow()
+    window._show_settings()
+    en_index = list(i18n.SUPPORTED_LANGUAGES.keys()).index("en")
+
+    window.language_combo.setCurrentIndex(en_index)
+
+    assert window.nav_buttons["files"].text() == "Collected Files"
+    assert window.nav_buttons["custody"].text() == "Chain of Custody"
+    assert window.nav_buttons["dashboard"].text() == "Dashboard"
+    # Dispatch hala calisiyor mu -- Ingilizce etiketli butona tiklamak
+    # hala dogru sayfaya gotürmeli.
+    window.nav_buttons["findings"].click()
+    assert window.stack.currentIndex() == 3
 
 
 def test_dil_acilir_listesi_kod_ve_ad_formatinda_ve_dogru_sirada(qt_app):

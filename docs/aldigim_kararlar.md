@@ -1939,3 +1939,38 @@ yerini ince yeşil bir çerçeve aldı, görsel olarak doğrulandı. Yeni
 kalıyor + kendi stylesheet'inde `QLabel:focus`/`ACCENT_TEXT` kuralını
 taşıyor -- regresyon kilidi), `test_i18n.py`'ye 1 yeni test ("Dil /
 Language" her iki dilde de aynı). Tüm paket (261 test) yeşil.
+
+---
+
+## Sidebar navigasyonu i18n'e taşındı: dispatch anahtarı ≠ görünen etiket
+
+**Karar:** Kullanıcı "tüm geliştirmelere sırayla başla" dedi -- listedeki
+ilk madde (çeviri kapsamının genişletilmesi) için gereken temel adım
+buydu. `main_window.py::SIDEBAR_PAGES`/`NAV_ICONS` daha önce hem GÖRÜNEN
+Türkçe etiket hem `nav_buttons` sözlük anahtarı hem `_build_sidebar`'daki
+dispatch karşılaştırması (`if name == "Toplanan Dosyalar":`) olarak AYNI
+string'i kullanıyordu -- `i18n.py`'nin kendi modül başı notunun da
+belirttiği gibi bu yüzden "riskli bir refactor" gerektiriyordu. Şimdi
+`SIDEBAR_PAGES` SABİT (dile bağlı olmayan) İngilizce kimlikler taşıyor
+(`"cases"`, `"custody"`, `"reports"`, `"findings"`, `"files"`,
+`"timeline"`, `"settings"`), görünen etiket `i18n.t(f"nav_{id}")`'den
+geliyor -- ic dispatch mantığı artık dilden TAMAMEN bağımsız. Sidebar'ın
+kendi çerçeve metinleri de (`AKTİF VAKA` pill başlığı, `GENEL` bölüm
+etiketi, alt bilgi satırı, başlangıçtaki "Vaka yüklenmedi" yer tutucusu)
+`i18n.py`'ye taşındı.
+
+**Kapsam yine bilinçli olarak sınırlı:** sayfaların KENDİ içeriği (Dashboard
+metrik kartları, tablo başlıkları, durum mesajları vb.) henüz çevrilmedi --
+bu ayrı, sayfa sayfa ilerleyecek bir sonraki adım. Şu an dil değiştirilince
+pencere başlığı + sidebar navigasyonu + Ayarlar sayfası İngilizce'ye
+geçiyor, geri kalan sayfa içerikleri hâlâ Türkçe.
+
+**Doğrulama:** `QWidget.grab()` ile İngilizce'ye geçilmiş tam pencere
+render edilip görsel olarak incelendi -- sidebar'daki yedi etiketin hepsi
+("Cases", "Chain of Custody", "Reports", "Findings", "Collected Files",
+"Timeline", "Settings") + "ACTIVE CASE"/"GENERAL"/"Chain integrity
+monitored" doğru göründü. 1 yeni test eklendi (`test_gui_qt.py`): dil
+değişince sidebar etiketleri değişiyor VE İngilizce etiketli butona
+tıklamak hâlâ doğru sayfayı açıyor (dispatch bozulmadı). Mevcut testlerdeki
+`nav_buttons[...]` referansları yeni İngilizce anahtarlara güncellendi.
+Tüm paket (262 test) yeşil.

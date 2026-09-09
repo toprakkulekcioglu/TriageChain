@@ -161,22 +161,25 @@ def _event_detail(event) -> str:
     return ""
 
 # Dashboard disindaki sidebar sayfalari, gosterilis sirasiyla -- hepsi artik
-# gercek sayfa (yer tutucu kalmadi).
-SIDEBAR_PAGES = (
-    "Vakalar", "Delil Zinciri", "Raporlar", "Bulgular", "Toplanan Dosyalar", "Zaman Çizelgesi",
-    "Ayarlar",
-)
+# gercek sayfa (yer tutucu kalmadi). SABIT (dile bagli OLMAYAN) Ingilizce
+# kimlikler -- gorunen etiket buradan degil i18n.t(f"nav_{id}")'den gelir,
+# boylece dil degisince ic dispatch mantigi (asagida _build_sidebar/
+# _show_X) ETKILENMEZ. Eskiden bu tuple'in kendisi Turkce GORUNEN metni
+# tasiyordu (hem etiket hem anahtar) -- kullanicinin coklu dil istegiyle
+# ayristirildi (bkz. i18n.py modul basi notu).
+SIDEBAR_PAGES = ("cases", "custody", "reports", "findings", "files", "timeline", "settings")
 
-# Sidebar'daki her sayfa satirinin solundaki ikon (bkz. assets/icons/*.svg).
+# Sidebar'daki her sayfa satirinin solundaki ikon (bkz. assets/icons/*.svg),
+# sayfa kimligine gore -- SIDEBAR_PAGES ile ayni gerekce.
 NAV_ICONS = {
-    "Dashboard": "grid",
-    "Vakalar": "folder",
-    "Delil Zinciri": "link-2",
-    "Raporlar": "file-text",
-    "Bulgular": "search",
-    "Toplanan Dosyalar": "database",
-    "Zaman Çizelgesi": "clock",
-    "Ayarlar": "settings",
+    "dashboard": "grid",
+    "cases": "folder",
+    "custody": "link-2",
+    "reports": "file-text",
+    "findings": "search",
+    "files": "database",
+    "timeline": "clock",
+    "settings": "settings",
 }
 
 
@@ -803,17 +806,17 @@ class TriageChainWindow(QMainWindow):
         pill_layout = QVBoxLayout(pill)
         pill_layout.setContentsMargins(10, 6, 10, 6)
         pill_layout.setSpacing(1)
-        pill_caption = QLabel("AKTİF VAKA")
+        pill_caption = QLabel(i18n.t("sidebar_active_case"))
         pill_caption.setStyleSheet(
             f"color:{t.TEXT_SECONDARY}; font-size:9.5px; font-weight:600; letter-spacing:1px;"
         )
         pill_layout.addWidget(pill_caption)
-        self.case_pill = MonoLabel("Vaka yüklenmedi")
+        self.case_pill = MonoLabel(i18n.t("sidebar_no_case"))
         pill_layout.addWidget(self.case_pill)
         layout.addWidget(pill)
         layout.addSpacing(18)
 
-        section_label = QLabel("GENEL")
+        section_label = QLabel(i18n.t("sidebar_section_general"))
         section_label.setStyleSheet(
             f"color:{t.TEXT_SECONDARY}; font-size:9.5px; font-weight:600; "
             f"letter-spacing:1px; padding-left:4px;"
@@ -825,35 +828,35 @@ class TriageChainWindow(QMainWindow):
         group = QButtonGroup(panel)
         group.setExclusive(True)
 
-        dash_btn = SidebarButton("Dashboard", NAV_ICONS["Dashboard"])
+        dash_btn = SidebarButton(i18n.t("nav_dashboard"), NAV_ICONS["dashboard"])
         dash_btn.clicked.connect(self._show_dashboard)
         group.addButton(dash_btn)
         layout.addWidget(dash_btn)
-        self.nav_buttons["Dashboard"] = dash_btn
+        self.nav_buttons["dashboard"] = dash_btn
         dash_btn.setChecked(True)
 
-        for name in SIDEBAR_PAGES:
-            btn = SidebarButton(name, NAV_ICONS[name])
-            if name == "Toplanan Dosyalar":
+        for page_id in SIDEBAR_PAGES:
+            btn = SidebarButton(i18n.t(f"nav_{page_id}"), NAV_ICONS[page_id])
+            if page_id == "files":
                 btn.clicked.connect(self._show_files)
-            elif name == "Delil Zinciri":
+            elif page_id == "custody":
                 btn.clicked.connect(self._show_custody)
-            elif name == "Bulgular":
+            elif page_id == "findings":
                 btn.clicked.connect(self._show_findings)
-            elif name == "Raporlar":
+            elif page_id == "reports":
                 btn.clicked.connect(self._show_reports)
-            elif name == "Vakalar":
+            elif page_id == "cases":
                 btn.clicked.connect(self._show_cases)
-            elif name == "Zaman Çizelgesi":
+            elif page_id == "timeline":
                 btn.clicked.connect(self._show_timeline)
-            elif name == "Ayarlar":
+            elif page_id == "settings":
                 btn.clicked.connect(self._show_settings)
             group.addButton(btn)
             layout.addWidget(btn)
-            self.nav_buttons[name] = btn
+            self.nav_buttons[page_id] = btn
 
         layout.addStretch()
-        foot = QLabel("Zincir bütünlüğü izleniyor")
+        foot = QLabel(i18n.t("sidebar_footer"))
         foot.setStyleSheet(
             f"color:{t.TEXT_SECONDARY}; font-family:'{t.FONT_UI}'; font-size:11px;"
         )

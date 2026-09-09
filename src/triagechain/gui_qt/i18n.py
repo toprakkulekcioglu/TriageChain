@@ -2,14 +2,16 @@
 `shared/i18n/strings.py` deseniyle ayni (STRINGS sozlugu + t(key)
 fonksiyonu), TriageChain'in kendi anahtarlariyla.
 
-KAPSAM (bilerek dar tutuldu -- bkz. docs/aldigim_kararlar.md): su an
-sadece PENCERE CEVRESI (pencere basligi, Ayarlar sayfasinin kendi metni)
-bu tablodan geciyor. Dashboard/Bulgular/Raporlar/Vakalar/Toplanan Dosyalar/
-Delil Zinciri/Zaman Çizelgesi gibi sayfalarin YUZLERCE kendi metni ve
-sidebar navigasyon etiketleri HENUZ bu tabloya tasinmadi -- bunlar hala
-sabit Turkce, hem etiket hem ic dispatch anahtari olarak kullaniliyor
-(bkz. main_window.py::SIDEBAR_PAGES), bu yuzden riskli bir refactor
-gerektiriyor; ayri, daha buyuk bir asama olarak planlandi.
+KAPSAM: pencere cevresi (pencere basligi, sidebar navigasyon etiketleri,
+Ayarlar sayfasi) tamamen bu tablodan geciyor -- main_window.py::
+SIDEBAR_PAGES/NAV_ICONS artik SABIT (dile bagli olmayan) Ingilizce sayfa
+kimlikleriyle ("cases", "custody", "reports", "findings", "files",
+"timeline", "settings") calisiyor, GORUNEN etiket i18n.t(f"nav_{id}")'den
+geliyor -- ic dispatch mantigi ile goruntulenen metin artik BIRBIRINDEN
+BAGIMSIZ. Sayfalarin KENDI icerigi (Dashboard/Bulgular/Raporlar/Vakalar/
+Toplanan Dosyalar/Delil Zinciri/Zaman Çizelgesi'nin tablo basliklari,
+etiketleri, durum mesajlari) sayfa sayfa tasiniyor -- bkz.
+docs/aldigim_kararlar.md'deki ilerleme notlari.
 
 Su an TR (varsayilan) + EN dolu ve DOGRULANMIS (proje sozlugundeki DFIR
 terimleriyle tutarli); DE/FR/ES `SUPPORTED_LANGUAGES`'de SECENEK olarak
@@ -43,7 +45,18 @@ _TRANSLATED_LANGUAGES = {"tr", "en"}
 STRINGS: dict[str, dict[str, str]] = {
     "tr": {
         "window_title": "TriageChain Konsolu",
+        "nav_dashboard": "Dashboard",
+        "nav_cases": "Vakalar",
+        "nav_custody": "Delil Zinciri",
+        "nav_reports": "Raporlar",
+        "nav_findings": "Bulgular",
+        "nav_files": "Toplanan Dosyalar",
+        "nav_timeline": "Zaman Çizelgesi",
         "nav_settings": "Ayarlar",
+        "sidebar_section_general": "GENEL",
+        "sidebar_active_case": "AKTİF VAKA",
+        "sidebar_no_case": "Vaka yüklenmedi",
+        "sidebar_footer": "Zincir bütünlüğü izleniyor",
         "settings_title": "Ayarlar",
         "settings_subtitle": "Görünüm ve dil tercihleri -- değişiklik hemen uygulanır.",
         "settings_appearance": "Görünüm",
@@ -65,7 +78,18 @@ STRINGS: dict[str, dict[str, str]] = {
     },
     "en": {
         "window_title": "TriageChain Console",
+        "nav_dashboard": "Dashboard",
+        "nav_cases": "Cases",
+        "nav_custody": "Chain of Custody",
+        "nav_reports": "Reports",
+        "nav_findings": "Findings",
+        "nav_files": "Collected Files",
+        "nav_timeline": "Timeline",
         "nav_settings": "Settings",
+        "sidebar_section_general": "GENERAL",
+        "sidebar_active_case": "ACTIVE CASE",
+        "sidebar_no_case": "No case loaded",
+        "sidebar_footer": "Chain integrity monitored",
         "settings_title": "Settings",
         "settings_subtitle": "Appearance and language preferences -- changes apply immediately.",
         "settings_appearance": "Appearance",
