@@ -23,6 +23,8 @@ SEFERDE (ayri vaka kimlikleriyle) uretilir.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import zipfile
 from pathlib import Path
 from typing import Optional
@@ -69,6 +71,79 @@ _CAPA_GLOB = "capa.exe"
 # '2026-06-07T220139_user'); vaka kimligi eki turetilirken zaman damgasi
 # kismi atilir, sadece rol (anlamli kisim) kalir.
 _TIMESTAMP_PREFIX = re.compile(r"^\d{4}-?\d{2}-?\d{2}T?\d{2}:?\d{2}:?\d{2}_?")
+
+# .zip disindaki arsivler (.rar, .7z -- gercek bir kullanici senaryosunda
+# bulundu: KAPE'nin --zip ciktisi paylasilirken Telegram/WhatsApp gibi
+# araclar sikca .rar'a cevirip gonderiyor) kullanicinin makinesinde KURULU
+# olan bir 7-Zip'e (varsa) devrediliyor -- bkz. extract_archive().
+_SEVEN_ZIP_CANDIDATES = (
+    Path(r"C:\Program Files\7-Zip\7z.exe"),
+    Path(r"C:\Program Files (x86)\7-Zip\7z.exe"),
+)
+# 7-Zip her arsiv icin ayni cikartma zaman asimi -- buyuk bir KAPE arsivi
+# (yuz megabayt - birkac gigabayt) dakikalar surebilir, router/detection
+# katmanlarindaki en uzun zaman asimindan (capa: 1800sn) daha kisa tutulmadi.
+_SEVEN_ZIP_TIMEOUT_SECONDS = 1800
+
+
+def find_seven_zip() -> Optional[Path]:
+    """Kurulu bir 7-Zip ikilisi arar: once bilinen kurulum yollari, sonra PATH.
+
+    Bulunamamasi hata DEGIL -- .rar/.7z secimi bu durumda acikca reddedilir
+    (bkz. extract_archive), .zip yolu stdlib zipfile'e duser.
+    """
+    for candidate in _SEVEN_ZIP_CANDIDATES:
+        if candidate.is_file():
+            return candidate
+    found = shutil.which("7z") or shutil.which("7z.exe")
+    return Path(found) if found else None
+
+
+def extract_archive(archive_path: Path, dest_path: Path) -> Optional[str]:
+    """Bir arsivi dest_path altina cikartir. Basarili olursa None, basarisiz
+    olursa kullaniciya gosterilebilecek bir hata metni dondurur.
+
+    Once kurulu bir 7-Zip'e (varsa) devredilir -- ZIP DAHIL: gercek kullanici
+    verisiyle bulundu, bazi .zip dosyalari Python'un stdlib zipfile'inin
+    desteklemedigi bir sikistirma yontemi kullanabiliyor (`NotImplementedError:
+    That compression method is not supported`); 7-Zip bunlarin hepsini
+    acabiliyor. 7-Zip yoksa SADECE .zip icin stdlib zipfile'e dusulur; .rar/
+    .7z bu durumda acikca reddedilir (yeni bir bagimlilik/gomulu ikili
+    eklenmedi -- BYO-tool ilkesiyle ayni gerekce).
+    """
+    seven_zip = find_seven_zip()
+    if seven_zip is not None:
+        try:
+            result = subprocess.run(
+                [str(seven_zip), "x", str(archive_path), f"-o{dest_path}", "-y"],
+                capture_output=True,
+                timeout=_SEVEN_ZIP_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return f"Arşiv {_SEVEN_ZIP_TIMEOUT_SECONDS} saniyede çıkartılamadı, durduruldu."
+        except OSError as exc:
+            return f"7-Zip çalıştırılamadı: {exc}"
+        if result.returncode != 0:
+            stderr = result.stderr.decode("utf-8", errors="replace").strip()
+            return f"Arşiv çıkartılamadı (7-Zip): {stderr or 'bilinmeyen hata'}"
+        return None
+
+    if archive_path.suffix.lower() != ".zip":
+        return (
+            f"'{archive_path.suffix}' arşivini çıkartmak için makinede kurulu "
+            "bir 7-Zip bulunamadı. 7-Zip kurun ya da arşivi elle çıkartıp "
+            "'Kök Klasör Seç…' ile o klasörü seçin."
+        )
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            archive.extractall(dest_path)
+    except (zipfile.BadZipFile, NotImplementedError, OSError) as exc:
+        return (
+            f"ZIP çıkartılamadı: {exc}. Makinede 7-Zip kuruluysa bu tür "
+            "arşivler otomatik olarak onunla açılır -- kurup tekrar deneyin."
+        )
+    return None
 
 
 def _find_first(root: Path, filename_glob: str) -> Optional[str]:
@@ -245,9 +320,9 @@ class NewCaseDialog(QDialog):
 
     def _build_case_card(self) -> Card:
         card = Card("Vaka Bilgisi")
-        self.case_id_input = MonoInput("örn. FINAL-LAB")
-        self.operator_input = Input("örn. yasar")
-        self.description_input = Input("Kısa açıklama (opsiyonel)")
+        self.case_id_input = MonoInput()
+        self.operator_input = Input()
+        self.description_input = Input("(opsiyonel)")
         card.body.addWidget(self._labeled("Vaka Kimliği (toplu modda önek olur)", self.case_id_input))
         card.body.addWidget(self._labeled("Operatör", self.operator_input))
         card.body.addWidget(self._labeled("Açıklama", self.description_input))
@@ -258,10 +333,10 @@ class NewCaseDialog(QDialog):
         hint = QLabel(
             "Canlı sistem: TriageChain bu makinenin kendi diskinden toplar (VSS ile).\n"
             "Önceden toplanmış veri: KAPE gibi başka bir araçla ZATEN toplanmış bir "
-            "klasörü ya da ZIP'i içe aktarır -- canlı sisteme gerek kalmaz. Seçilen "
-            "klasörün altında birden fazla alt klasör bulunursa (örn. birden fazla "
-            "makinenin KAPE çıktısı), aşağıda hangilerinin ayrı vaka olacağını "
-            "seçebilirsiniz."
+            "klasörü ya da arşivi (ZIP/RAR/7z) içe aktarır -- canlı sisteme gerek "
+            "kalmaz. RAR/7z için makinede kurulu bir 7-Zip gerekir. Seçilen klasörün "
+            "altında birden fazla alt klasör bulunursa (örn. birden fazla makinenin "
+            "KAPE çıktısı), aşağıda hangilerinin ayrı vaka olacağını seçebilirsiniz."
         )
         hint.setWordWrap(True)
         hint.setStyleSheet(f"color:{t.TEXT_SECONDARY}; font-size:{t.SIZE_HELPER}px;")
@@ -280,7 +355,7 @@ class NewCaseDialog(QDialog):
         picker_row = QHBoxLayout()
         self._pick_folder_btn = SecondaryButton("Kök Klasör Seç…")
         self._pick_folder_btn.clicked.connect(self._on_pick_source_folder)
-        self._pick_zip_btn = SecondaryButton("ZIP Seç…")
+        self._pick_zip_btn = SecondaryButton("Arşiv Seç… (ZIP/RAR/7z)")
         self._pick_zip_btn.clicked.connect(self._on_pick_source_zip)
         picker_row.addWidget(self._pick_folder_btn)
         picker_row.addWidget(self._pick_zip_btn)
@@ -318,22 +393,48 @@ class NewCaseDialog(QDialog):
         self._set_source_root(Path(path))
 
     def _on_pick_source_zip(self) -> None:
-        zip_path, _filter = QFileDialog.getOpenFileName(
-            self, "ZIP arşivi seç", "", "ZIP arşivleri (*.zip)"
+        archive_path, _filter = QFileDialog.getOpenFileName(
+            self, "Arşiv seç", "",
+            "Arşivler (*.zip *.rar *.7z);;ZIP (*.zip);;RAR (*.rar);;7z (*.7z)",
         )
-        if not zip_path:
+        if not archive_path:
             return
-        dest = QFileDialog.getExistingDirectory(self, "ZIP nereye çıkartılsın?")
+        dest = QFileDialog.getExistingDirectory(self, "Arşiv nereye çıkartılsın?")
         if not dest:
             return
         dest_path = Path(dest)
-        try:
-            with zipfile.ZipFile(zip_path) as archive:
-                archive.extractall(dest_path)
-        except (zipfile.BadZipFile, OSError) as exc:
-            self._show_error(f"ZIP çıkartılamadı: {exc}")
+
+        error = extract_archive(Path(archive_path), dest_path)
+        if error:
+            self._show_error(error)
+            return
+        if not self._extract_nested_zips(dest_path):
             return
         self._set_source_root(dest_path)
+
+    def _extract_nested_zips(self, dest_path: Path) -> bool:
+        """Cikartilan kokte DOGRUDAN duran ic ice .zip dosyalarini kendi
+        adlarinda alt klasorlere cikartir.
+
+        Gercek kullanici verisiyle bulundu: KAPE ciktisini paylasirken
+        kullanilan bir .rar, makineleri klasor olarak degil DOGRUDAN ic ice
+        birer .zip dosyasi olarak tasiyordu (orn. '2026-06-07T220139_user.zip'
+        -- klasor degil, dosya). Bu adim olmadan detect_machine_roots() hicbir
+        alt klasor bulamaz ve toplu mod hic devreye girmez. Ic ice arsiv
+        yoksa bu fonksiyon sessizce hicbir sey yapmaz.
+        """
+        nested = sorted(
+            p for p in dest_path.iterdir() if p.is_file() and p.suffix.lower() == ".zip"
+        )
+        for nested_zip in nested:
+            target = dest_path / nested_zip.stem
+            if target.exists():
+                continue
+            error = extract_archive(nested_zip, target)
+            if error:
+                self._show_error(f"'{nested_zip.name}' çıkartılamadı: {error}")
+                return False
+        return True
 
     def _set_source_root(self, root: Path) -> None:
         self._source_root = root

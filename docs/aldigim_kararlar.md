@@ -1701,3 +1701,44 @@ bulundu. 18 yeni test eklendi (`tests/unit/test_case_wizard.py`) — saf
 yardımcı fonksiyonlar (`derive_case_suffix`, `detect_machine_roots`,
 `resolve_drive_root`, `autodetect_tools`) ve Qt sihirbazının tekli/toplu/
 canlı-sistem/hata yolları. Tüm paket (214 test) yeşil.
+
+---
+
+## Sihirbaza RAR/7z desteği + iç içe arşiv çözümü (gerçek kullanıcı verisiyle bulundu)
+
+**Karar:** Kullanıcı sihirbazın "ZIP Seç" seçicisiyle kendi gerçek test
+verisini (`final lab some kape analiz.rar`) açmaya çalıştı, dosya
+görünmedi — sebep basit: dosya `.zip` değil `.rar`. Seçici `*.zip *.rar
+*.7z` kabul edecek şekilde genişletildi; `.rar`/`.7z` için makinede kurulu
+bir 7-Zip'e (`find_seven_zip()` -- önce bilinen kurulum yolları, sonra
+`PATH`) `subprocess` ile devrediliyor (BYO-tool ilkesiyle aynı gerekçe: 7-Zip
+gömülmedi, kullanıcı kendi kurduğu sürümü kullanıyor). Bulunamaması hata
+değil — `.zip` yolu hiç etkilenmiyor, `.rar`/`.7z` bu durumda açıkça
+reddediliyor ("elle çıkartıp Kök Klasör Seç ile seçin").
+
+**İkinci, daha ince bulgu (gerçek `.rar`'ı gerçekten açınca ortaya çıktı):**
+Bu `.rar` makineleri KLASÖR olarak değil, doğrudan İÇ İÇE üç ayrı `.zip`
+dosyası olarak taşıyordu (`2026-06-07T220139_user.zip` vb. — klasör değil,
+dosya). `detect_machine_roots()` sadece klasörlere baktığı için toplu mod
+hiç devreye girmiyordu. `_extract_nested_zips()` eklendi: çıkartılan kökte
+doğrudan duran `.zip` dosyalarını kendi adlarında alt klasörlere çıkartıp
+toplu modun normal akışına (`detect_machine_roots` → onay kutuları) devrediyor.
+
+**Üçüncü bulgu:** Bu iç içe `.zip` dosyalarından biri Python'un stdlib
+`zipfile`'ının desteklemediği bir sıkıştırma yöntemi kullanıyordu
+(`NotImplementedError: That compression method is not supported`) — ilk
+yazımda bu istisna yakalanmıyordu (`except (BadZipFile, OSError)`), sessizce
+çökerdi. Çözüm sadece "bir istisna daha yakala" değil, mimari: TÜM arşiv
+çıkartma tek bir `extract_archive()` fonksiyonuna toplandı — 7-Zip
+kuruluysa `.zip` DAHİL her şey ona devrediliyor (gerçek dünya `.zip`'leri
+stdlib'in desteklemediği yöntemler kullanabiliyor, 7-Zip hepsini açabiliyor),
+7-Zip yoksa sadece `.zip` için stdlib'e (artık `NotImplementedError` da
+yakalanarak) düşülüyor.
+
+**Doğrulama:** Kullanıcının GERÇEK `.rar` dosyasına karşı uçtan uca
+çalıştırıldı: 7-Zip ile açıldı → 3 iç içe `.zip` bulundu → her biri kendi
+klasörüne çıkartıldı → `detect_machine_roots` 3'ünü de buldu → toplu mod
+3 doğru `source_root`'lu config üretti → biri gerçek `collect` ile
+çalıştırıldı: **384/384 dosya, 0 hata** (elle hazırlanmış configle birebir
+aynı sonuç). 7 yeni test eklendi (`extract_archive` başarı/hata yolları,
+`_extract_nested_zips` idempotency dahil). Tüm paket (221 test) yeşil.

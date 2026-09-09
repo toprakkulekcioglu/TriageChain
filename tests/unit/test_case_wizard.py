@@ -21,11 +21,15 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
+import zipfile  # noqa: E402
+
+from triagechain.gui_qt import case_wizard  # noqa: E402
 from triagechain.gui_qt.case_wizard import (  # noqa: E402
     NewCaseDialog,
     autodetect_tools,
     derive_case_suffix,
     detect_machine_roots,
+    extract_archive,
     resolve_drive_root,
 )
 
@@ -91,6 +95,109 @@ def test_autodetect_tools_bilinen_isimleri_bulur(tmp_path):
 def test_autodetect_tools_hicbir_sey_bulamazsa_bos_sozluk_doner(tmp_path):
     found = autodetect_tools(tmp_path)
     assert found == {"router_tools": {}, "detection": {}}
+
+
+def _make_zip(zip_path: Path, files: dict[str, str]) -> None:
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        for name, content in files.items():
+            archive.writestr(name, content)
+
+
+# -- Arsiv cikartma (extract_archive / _extract_nested_zips) ----------------
+# find_seven_zip() bu gelistirme makinesinde GERCEK bir 7-Zip bulabiliyor --
+# 7z hem .zip'i hem .rar/.7z'i actigi icin normal (gecerli) bir .zip'te iki
+# yol da (7z VEYA stdlib zipfile) ayni sonucu vermeli; "7z yok" davranisi
+# ayrica monkeypatch ile zorlanarak test ediliyor (CI'da gercekten 7z
+# bulunmuyor, o yuzden CI zaten hep bu ikinci yolu test ediyor).
+
+def test_extract_archive_gecerli_zip_basariyla_acar(tmp_path):
+    zip_path = tmp_path / "kaynak.zip"
+    _make_zip(zip_path, {"C/marker.txt": "merhaba"})
+    dest = tmp_path / "hedef"
+
+    error = extract_archive(zip_path, dest)
+
+    assert error is None
+    assert (dest / "C" / "marker.txt").read_text(encoding="utf-8") == "merhaba"
+
+
+def test_extract_archive_7z_yokken_zip_yine_stdlib_ile_acilir(tmp_path, monkeypatch):
+    monkeypatch.setattr(case_wizard, "find_seven_zip", lambda: None)
+    zip_path = tmp_path / "kaynak.zip"
+    _make_zip(zip_path, {"C/marker.txt": "merhaba"})
+    dest = tmp_path / "hedef"
+
+    error = extract_archive(zip_path, dest)
+
+    assert error is None
+    assert (dest / "C" / "marker.txt").is_file()
+
+
+def test_extract_archive_7z_yokken_rar_acikca_reddedilir(tmp_path, monkeypatch):
+    monkeypatch.setattr(case_wizard, "find_seven_zip", lambda: None)
+    fake_rar = tmp_path / "kaynak.rar"
+    fake_rar.write_bytes(b"not a real rar")
+
+    error = extract_archive(fake_rar, tmp_path / "hedef")
+
+    assert error is not None
+    assert "7-Zip" in error
+
+
+def test_extract_archive_bozuk_zip_hata_doner(tmp_path, monkeypatch):
+    monkeypatch.setattr(case_wizard, "find_seven_zip", lambda: None)
+    bozuk = tmp_path / "bozuk.zip"
+    bozuk.write_bytes(b"bu gecerli bir zip degil")
+
+    error = extract_archive(bozuk, tmp_path / "hedef")
+
+    assert error is not None
+
+
+def test_extract_nested_zips_ic_ice_zip_dosyalarini_klasore_cikartir(dialog, tmp_path):
+    """Gercek kullanici verisiyle bulunan durum: bir arsiv cikartildiginda
+    kokte DOGRUDAN makine .zip dosyalari duruyor (klasor degil) -- bkz.
+    case_wizard.py::_extract_nested_zips docstring'i."""
+    dest = tmp_path / "cikarilan"
+    dest.mkdir()
+    _make_zip(dest / "2026-06-07T220139_user.zip", {"C/marker.txt": "user"})
+    _make_zip(dest / "2026-06-07T222136_server.zip", {"C/marker.txt": "server"})
+
+    ok = dialog._extract_nested_zips(dest)
+
+    assert ok is True
+    assert (dest / "2026-06-07T220139_user" / "C" / "marker.txt").read_text() == "user"
+    assert (dest / "2026-06-07T222136_server" / "C" / "marker.txt").read_text() == "server"
+    # Toplu mod bu noktada devreye girebilmeli:
+    machine_roots = detect_machine_roots(dest)
+    assert {p.name for p in machine_roots} >= {
+        "2026-06-07T220139_user", "2026-06-07T222136_server",
+    }
+
+
+def test_extract_nested_zips_zip_yoksa_hicbir_sey_yapmaz(dialog, tmp_path):
+    dest = tmp_path / "cikarilan"
+    (dest / "C").mkdir(parents=True)
+
+    ok = dialog._extract_nested_zips(dest)
+
+    assert ok is True
+    assert sorted(p.name for p in dest.iterdir()) == ["C"]
+
+
+def test_extract_nested_zips_mevcut_hedefi_tekrar_cikartmaz(dialog, tmp_path):
+    dest = tmp_path / "cikarilan"
+    dest.mkdir()
+    _make_zip(dest / "user.zip", {"C/marker.txt": "orijinal"})
+    already = dest / "user"
+    already.mkdir()
+    (already / "farkli.txt").write_text("elle konulmus dosya")
+
+    ok = dialog._extract_nested_zips(dest)
+
+    assert ok is True
+    assert (already / "farkli.txt").is_file()
+    assert not (already / "C").exists()
 
 
 # -- Sihirbaz (Qt) ------------------------------------------------------------
