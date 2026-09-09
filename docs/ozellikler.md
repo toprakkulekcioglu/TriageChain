@@ -252,21 +252,35 @@ kullanmak için KAPE kurulumu ya da lisansı gerekmiyor.
   konfigürasyonu (`.yaml`) yüklendikten sonra YEDİ komut da (Toplamayı
   Başlat / Yönlendir / Tara / YARA Tara / Chainsaw Tara / capa Tara /
   Rapor Üret) buradan çalıştırılabiliyor; her biri ayrı bir `QThread`'de
-  koştuğu için arayüz donmuyor. **Sidebar'daki yedi sayfanın hepsi
+  koştuğu için arayüz donmuyor. **Sidebar'daki sekiz sayfanın hepsi
   işlevsel** (yer tutucu sayfa yok): Dashboard (metrik kartları +
   sparkline'lar + zincir durumu rozeti), Toplanan Dosyalar, Delil Zinciri
   (tam olay listesi), Bulgular (Hayabusa + Chainsaw bulgu tabloları, YARA +
   capa eşleşmeleri, iki korelasyon vurgusu), Raporlar (Yönetici/Uzman
-  sekmeleri) ve Vakalar (kardeş vaka klasörlerini bulma) — hepsi diskteki
-  manifest/defter dosyalarından her koşudan sonra **yeniden okunarak**
-  besleniyor. Zincir kırıksa kırılma noktasından sonraki satırlar
-  "Şüpheli" olarak işaretleniyor. Yönlendir/Tara/YARA/Chainsaw/capa/Rapor
-  butonları `manifest.json` yoksa kapalı. Ham Python hata izlemesi hiçbir yerde
-  gösterilmiyor. Arayüz kendi paleti ve **gömülü fontları** (Inter +
-  JetBrains Mono, OFL lisanslı, `gui_qt/assets/fonts/`) ile tutarlı bir
-  görünüm sağlıyor — hedef makinede bu fontların kurulu olması gerekmiyor.
-  Eski `tkinter` arayüzü (`gui/app.py`) dosyası duruyor ama artık bu
-  komuta bağlı değil.
+  sekmeleri), Vakalar (kardeş vaka klasörlerini bulma) ve Ayarlar (görünüm +
+  dil) — hepsi diskteki manifest/defter dosyalarından her koşudan sonra
+  **yeniden okunarak** besleniyor. Zincir kırıksa kırılma noktasından
+  sonraki satırlar "Şüpheli" olarak işaretleniyor. Yönlendir/Tara/YARA/
+  Chainsaw/capa/Rapor butonları `manifest.json` yoksa kapalı. Ham Python
+  hata izlemesi hiçbir yerde gösterilmiyor. Arayüz kendi paleti ve
+  **gömülü fontları** (Inter + JetBrains Mono, OFL lisanslı,
+  `gui_qt/assets/fonts/`) ile tutarlı bir görünüm sağlıyor — hedef
+  makinede bu fontların kurulu olması gerekmiyor. Eski `tkinter` arayüzü
+  (`gui/app.py`) dosyası duruyor ama artık bu komuta bağlı değil.
+- **Açık/koyu tema + Ayarlar sayfası** (`gui_qt/theme.py::set_mode`,
+  chameleon'un aynı deseninden): Ayarlar sayfasındaki radyo düğmesiyle
+  anında (pencere yeniden kurularak) geçiş yapılıyor, ayrı bir yeniden
+  başlatma gerekmiyor. Açık tema renkleri GitHub Primer'in yayımlanmış
+  açık tema paletinden türetildi, WCAG 2.1 kontrastı gerçek sRGB
+  luminance formülüyle hesaplandı (tahmin edilmedi) — koyu temanın aynı
+  disiplinle kurulmuş olmasıyla tutarlı.
+- **Çok dil altyapısı** (`gui_qt/i18n.py`): Ayarlar sayfasında TR/EN/ES/
+  DE/PT/FR seçenekleri var ("`<KOD> <yerel ad>`" biçiminde, örn.
+  "EN English"); şu an TR + EN TAM çevrili, diğer dördü seçilebilir ama
+  henüz çevrilmedi (seçilirse arayüz İngilizce'ye düşer, sayfa bunu açıkça
+  belirtir). Kapsam bilerek dar: şu an sadece pencere başlığı + Ayarlar
+  sayfasının kendi metni dile göre değişiyor, diğer yedi sayfanın içeriği
+  henüz çevrilmedi (ayrı, daha büyük bir aşama olarak planlandı).
 - **"Yeni Vaka Oluştur" sihirbazı** (`gui_qt/case_wizard.py::NewCaseDialog`):
   KAPE'nin kendi GUI'sindeki "target source"/"target destination"
   deneyimini taklit ediyor — kullanıcı vaka bilgisini yazıp kaynağı (canlı

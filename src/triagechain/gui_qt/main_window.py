@@ -22,7 +22,9 @@ from PySide6.QtCore import QSize, Qt, QThread, Signal
 from PySide6.QtGui import QColor, QGuiApplication
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QButtonGroup,
+    QComboBox,
     QDialog,
     QFileDialog,
     QFrame,
@@ -32,6 +34,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMenu,
     QPushButton,
+    QRadioButton,
     QSizePolicy,
     QStackedWidget,
     QTableWidget,
@@ -63,6 +66,7 @@ from triagechain.detection.correlation import correlate_findings, correlate_sigm
 from triagechain.detection.models import DetectionManifest, YaraManifest
 from triagechain.detection.runner import run_detection
 from triagechain.detection.yara_runner import run_yara_scan
+from triagechain.gui_qt import i18n
 from triagechain.gui_qt import icons
 from triagechain.gui_qt import theme as t
 from triagechain.gui_qt.case_wizard import NewCaseDialog
@@ -160,6 +164,7 @@ def _event_detail(event) -> str:
 # gercek sayfa (yer tutucu kalmadi).
 SIDEBAR_PAGES = (
     "Vakalar", "Delil Zinciri", "Raporlar", "Bulgular", "Toplanan Dosyalar", "Zaman Çizelgesi",
+    "Ayarlar",
 )
 
 # Sidebar'daki her sayfa satirinin solundaki ikon (bkz. assets/icons/*.svg).
@@ -171,6 +176,7 @@ NAV_ICONS = {
     "Bulgular": "search",
     "Toplanan Dosyalar": "database",
     "Zaman Çizelgesi": "clock",
+    "Ayarlar": "settings",
 }
 
 
@@ -712,13 +718,30 @@ class TriageChainWindow(QMainWindow):
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("TriageChain Konsolu")
         self.setWindowIcon(icons.app_icon())
         self.resize(1180, 760)
         self.config = None
         self.config_path: Optional[Path] = None
         self.snapshot = CaseSnapshot()
         self._worker: Optional[ActionWorker] = None
+
+        self._build_shell()
+        self._refresh()
+
+    # -- Kabuk: sidebar + sayfa yigini ---------------------------------------
+    def _build_shell(self) -> None:
+        """Sidebar + QStackedWidget sayfalarini kurup pencerenin merkez
+        widget'i yapar.
+
+        Widget'lar renklerini KURULUM ANINDA QSS'e gomdugu icin (canli
+        guncellenmiyor, bkz. theme.py modul basi notu), tema ya da dil
+        degisince gorunmesi icin TEK care butun kabugu yikip yeniden
+        kurmak -- chameleon'daki ayni _build_shell()/_apply_theme() deseniyle
+        birebir ayni (bkz. docs/aldigim_kararlar.md). setCentralWidget()
+        cagrildiginda Qt bir onceki merkez widget'i kendiliginden siliyor,
+        bu yuzden burada elle bir temizlik gerekmiyor.
+        """
+        self.setWindowTitle(i18n.t("window_title"))
 
         central = QWidget()
         root = QHBoxLayout(central)
@@ -734,10 +757,9 @@ class TriageChainWindow(QMainWindow):
         self.stack.addWidget(self._build_reports_page())  # index 4
         self.stack.addWidget(self._build_cases_page())  # index 5
         self.stack.addWidget(self._build_timeline_page())  # index 6
+        self.stack.addWidget(self._build_settings_page())  # index 7
         root.addWidget(self.stack, stretch=1)
         self.setCentralWidget(central)
-
-        self._refresh()
 
     # -- Sidebar ------------------------------------------------------------
     def _build_sidebar(self) -> QWidget:
@@ -824,6 +846,8 @@ class TriageChainWindow(QMainWindow):
                 btn.clicked.connect(self._show_cases)
             elif name == "Zaman Çizelgesi":
                 btn.clicked.connect(self._show_timeline)
+            elif name == "Ayarlar":
+                btn.clicked.connect(self._show_settings)
             group.addButton(btn)
             layout.addWidget(btn)
             self.nav_buttons[name] = btn
@@ -856,6 +880,9 @@ class TriageChainWindow(QMainWindow):
 
     def _show_timeline(self) -> None:
         self.stack.setCurrentIndex(6)
+
+    def _show_settings(self) -> None:
+        self.stack.setCurrentIndex(7)
 
     # -- Toplanan Dosyalar ---------------------------------------------------
     def _build_files_page(self) -> QWidget:
@@ -1109,6 +1136,122 @@ class TriageChainWindow(QMainWindow):
             detail_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
             self.timeline_table.setCellWidget(row, 3, detail_label)
         _fit_rows_to_cell_widgets(self.timeline_table, column=3)
+
+    # -- Ayarlar ----------------------------------------------------------------
+    def _build_settings_page(self) -> QWidget:
+        """Görünüm (koyu/açık) + dil tercihi -- değişiklik HEMEN uygulanır.
+
+        NOT (bkz. i18n.py modul basi notu): dil secimi su an SADECE pencere
+        basligi + bu sayfanin kendi metnini degistiriyor -- Dashboard/
+        Bulgular/Raporlar gibi sayfalarin icerigi ve sidebar navigasyon
+        etiketleri henuz cevrilmedi. Bu ACIKCA (settings_language_hint)
+        belirtiliyor, kullanici yaniltilmiyor.
+        """
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(36, 28, 36, 28)
+        layout.setSpacing(t.CARD_GAP)
+
+        title = QLabel(i18n.t("settings_title"))
+        title.setStyleSheet(
+            f"font-family:'{t.FONT_UI}'; font-size:{t.SIZE_TITLE}px; "
+            f"font-weight:600; color:{t.TEXT_MAIN};"
+        )
+        layout.addWidget(title)
+
+        subtitle = QLabel(i18n.t("settings_subtitle"))
+        subtitle.setStyleSheet(f"color:{t.TEXT_SECONDARY}; font-size:{t.SIZE_HELPER}px;")
+        layout.addWidget(subtitle)
+
+        appearance_card = Card(i18n.t("settings_appearance"))
+        theme_row = QHBoxLayout()
+        theme_group = QButtonGroup(appearance_card)
+        current_mode = t.get_mode()
+        self.theme_dark_radio = QRadioButton(i18n.t("settings_theme_dark"))
+        self.theme_light_radio = QRadioButton(i18n.t("settings_theme_light"))
+        self.theme_dark_radio.setChecked(current_mode == "dark")
+        self.theme_light_radio.setChecked(current_mode == "light")
+        for radio, mode in ((self.theme_dark_radio, "dark"), (self.theme_light_radio, "light")):
+            radio.setStyleSheet(f"color:{t.TEXT_MAIN}; font-size:{t.SIZE_BODY}px;")
+            theme_group.addButton(radio)
+            theme_row.addWidget(radio)
+            # Chameleon'daki AYNI kisa devre deseni: sadece ISARETLENEN
+            # radio icin tetiklenir, ISARETI KALDIRILAN icin ikinci kez
+            # cagrilmaz (checked=False dalinda 'and' sag tarafi hic
+            # calismiyor).
+            radio.toggled.connect(lambda checked, m=mode: checked and self._apply_theme(m))
+        theme_row.addStretch()
+        appearance_card.body.addLayout(theme_row)
+        layout.addWidget(appearance_card)
+
+        language_card = Card(i18n.t("settings_language"))
+        self.language_combo = QComboBox()
+        self.language_combo.setStyleSheet(f"""
+            QComboBox {{
+                background-color: {t.BG_LAYER2};
+                color: {t.TEXT_MAIN};
+                border: 1px solid {t.BORDER};
+                border-radius: {t.RADIUS_SM}px;
+                padding: 6px 10px;
+                font-family: "{t.FONT_UI}";
+                font-size: {t.SIZE_BODY}px;
+            }}
+        """)
+        not_translated_suffix = (
+            " (henüz çevrilmedi)" if i18n.get_language() == "tr" else " (not yet translated)"
+        )
+        language_codes = list(i18n.SUPPORTED_LANGUAGES.keys())
+        for code in language_codes:
+            # "<KOD> <yerel ad>" bicimi (orn. "EN English") -- kullanicinin
+            # istedigi format, gercek dil secicilerinde (browser/OS) de
+            # yaygin kullanilan bir kalip.
+            label = f"{code.upper()} {i18n.SUPPORTED_LANGUAGES[code]}"
+            if not i18n.is_translated(code):
+                label += not_translated_suffix
+            self.language_combo.addItem(label, code)
+        self.language_combo.setCurrentIndex(language_codes.index(i18n.get_language()))
+        self.language_combo.currentIndexChanged.connect(self._on_language_combo_changed)
+        language_card.body.addWidget(self.language_combo)
+
+        language_hint = QLabel(i18n.t("settings_language_hint"))
+        language_hint.setWordWrap(True)
+        language_hint.setStyleSheet(f"color:{t.TEXT_SECONDARY}; font-size:{t.SIZE_HELPER}px;")
+        language_card.body.addWidget(language_hint)
+
+        if not i18n.is_translated(i18n.get_language()):
+            untranslated_note = QLabel(i18n.t("settings_untranslated_notice"))
+            untranslated_note.setWordWrap(True)
+            untranslated_note.setStyleSheet(f"color:{t.ATTENTION}; font-size:{t.SIZE_HELPER}px;")
+            language_card.body.addWidget(untranslated_note)
+
+        layout.addWidget(language_card)
+        layout.addStretch()
+        return page
+
+    def _apply_theme(self, mode: str) -> None:
+        """QApplication'in genel QSS'ini yeniden uygular + kabugu (ve acik
+        olan Ayarlar sayfasini) yeniden kurar -- bkz. _build_shell()
+        aciklamasi. Kabuk yeniden kurulunca su an ekranda olan (bu metodu
+        tetikleyen) radio butonu da yok edilir, ama Qt setCentralWidget()
+        eskisini deleteLater() ile ERTELEYEREK sildigi icin bu, halen
+        calismakta olan toggled sinyali isleyicisi icin GUVENLI -- chameleon
+        production'da ayni desen kullaniliyor."""
+        t.set_mode(mode)
+        app = QApplication.instance()
+        if app is not None:
+            app.setStyleSheet(t.base_stylesheet())
+        self._build_shell()
+        self._show_settings()
+        self._refresh()
+
+    def _on_language_combo_changed(self, index: int) -> None:
+        code = self.language_combo.itemData(index)
+        if code is None:
+            return
+        i18n.set_language(code)
+        self._build_shell()
+        self._show_settings()
+        self._refresh()
 
     # -- Bulgular -------------------------------------------------------------
     def _build_findings_page(self) -> QWidget:

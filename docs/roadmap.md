@@ -146,6 +146,22 @@
   (`tests/unit/test_case_wizard.py`, toplam 25). Detaylar
   `aldigim_kararlar.md`'de. Toplam 221 test.
 
+- **Açık/koyu tema + "Ayarlar" sayfası + çok dil altyapısı eklendi** --
+  `theme.py` chameleon'daki `set_mode()`/`DARK`/`LIGHT` desenine geçti,
+  açık tema renkleri GitHub Primer'in gerçek açık tema paletinden
+  türetilip WCAG kontrastı gerçek formülle hesaplandı; yeni bir
+  `TEXT_ON_ACCENT` tokeniyle "PrimaryButton yazısı açık temada görünmez
+  oluyordu" hatası önlendi. Yeni "Ayarlar" sidebar sayfası: tema radyo
+  düğmesi + dil açılır listesi (TR/EN/ES/DE/PT/FR, "`<KOD> <ad>`"
+  biçiminde), değişiklik pencere yeniden kurularak ANINDA uygulanıyor.
+  Dil altyapısı (`i18n.py`) şu an sadece TR+EN TAM çevrili (pencere
+  başlığı + Ayarlar sayfası); ES/DE/PT/FR seçilebilir ama "henüz
+  çevrilmedi" notuyla İngilizce'ye düşüyor -- diğer 7 sayfanın içeriğinin
+  çevirisi ayrı, daha büyük bir aşama. `QWidget.grab()` ile hem koyu hem
+  açık temada görsel olarak doğrulandı (Ayarlar + Dashboard). 33 yeni test
+  (`test_theme.py`, `test_i18n.py`, `test_gui_qt.py`'ye eklenenler).
+  Detaylar `aldigim_kararlar.md`'de. Toplam 258 test.
+
 ## Sırada
 
 1. ~~Hayabusa CSV başlıkları doğrulanamadı~~ **tamamlandı** — kullanıcının

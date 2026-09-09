@@ -1823,3 +1823,81 @@ boyuta yakın) hem geniş (1400px) pencerede yeniden render edildi -- dar
 pencerede artık YATAY kaydırma çubuğu YOK (önceden vardı), "Klasör Seç…"
 ve "Araç Klasörü Seç…" butonlarının ikisi de görünür alanda. Tüm paket
 (225 test, davranış değişikliği yok, sadece layout) yeşil.
+
+---
+
+## Açık/koyu tema + "Ayarlar" sayfası + çok dil altyapısı eklendi
+
+**Karar:** Kullanıcı iki şey istedi: (1) açık tema, ayrı bir "Ayarlar"
+sayfasında olacak şekilde, (2) daha önce ertelenen çok dil desteğinin
+durumu. `theme.py` başlangıçta BİLEREK tek (koyu) temayla kurulmuştu --
+kendi docstring'i "açık tema gerçekten istenirse chameleon'daki
+`globals().update()` deseni birebir buraya eklenebilir" diyordu. Bu
+oturumda tam olarak o desen (chameleon'un GERÇEKTEN production'da çalışan
+`shared/ui_kit/theme_qt.py` kodu okunarak) birebir uygulandı: `DARK`/`LIGHT`
+sözlükleri + `set_mode()`/`get_mode()`, `globals().update()` ile modül
+seviyesi renk sabitleri güncelleniyor.
+
+**Açık tema renkleri UYDURULMADI, GERÇEK bir kaynaktan (GitHub Primer'in
+yayımlanmış açık tema token'ları) türetildi ve WCAG 2.1 kontrastı gerçek
+sRGB relative luminance formülüyle HESAPLANDI** -- projenin koyu temayı da
+aynı disiplinle (Primer koyu tema + ölçülmüş kontrast) kurmuş olmasıyla
+tutarlı. Bulunan gerçek bir tasarım sorunu: `PrimaryButton` yazı rengi
+`t.BG_DARKEST` tokenini kullanıyordu (koyu temada "en koyu renk" anlamına
+geliyordu) -- açık temada bu token en AÇIK renge dönüşünce (`#F6F8FA`),
+yeşil dolgu üzerinde neredeyse görünmez bir buton yazısı ortaya çıkardı.
+Çözüm: chameleon'un aksine (orada ACCENT iki temada da sabit) TriageChain'in
+`ACCENT`'i tema başına AYRI (Primer'in success.emphasis/fg ayrımıyla aynı
+fikir: koyu `#3FB950`, açık `#1A7F37` -- açık ton koyu temadaki gibi kalırsa
+beyaz metin sadece ~2.5:1 verirdi) VE yeni bir `TEXT_ON_ACCENT` tokeni
+eklendi (koyu: `#0D1117`, açık: `#FFFFFF`) -- `widgets.py::PrimaryButton`
+artık bunu kullanıyor.
+
+**Sayfayı yeniden kurma zorunluluğu:** Widget'lar renkleri KURULUM ANINDA
+QSS string'ine gömdüğü için (theme.py'nin kendi, en başından beri var olan
+notu), tema değişince zaten var olan widget'lar OTOMATİK değişmiyor.
+Chameleon'un `_apply_theme() -> ui.set_mode() + app.setStyleSheet() +
+_build_shell() + _show_settings()` deseni birebir kopyalandı:
+`TriageChainWindow.__init__` içindeki kabuk kurulumu `_build_shell()`
+metoduna çıkarıldı, `_apply_theme(mode)` bunu tema değişince yeniden
+çağırıyor. Bir radio butonunun kendi `toggled` sinyali işleyicisi
+içinde `_build_shell()`'in O RADİO BUTONUNU DA yok etmesi güvenli mi diye
+kontrol edildi: Qt'nin `setCentralWidget()`'ı önceki merkez widget'ı
+SENKRON değil `deleteLater()` ile ERTELEYEREK siliyor, bu yüzden hâlâ
+çalışmakta olan sinyal işleyicisi güvenle dönüyor -- chameleon'un
+production'da AYNI deseni (hiçbir `QTimer.singleShot` savunması olmadan)
+kullanması bunu doğruluyor, burada da aynı doğrudan bağlama kullanıldı.
+
+**Çok dil desteği -- kapsam BİLEREK dar tutuldu:** Kullanıcı önce "TR+EN"
+onayladı, sonra "TR/EN/DE/FR/ES" (5 dil) istedi, en son "TR/EN/ES/DE/PT/FR"
+(Portekizce eklenip bu sırada) + her girdinin "`<KOD> <yerel ad>`"
+biçiminde (örn. "EN English") gösterilmesini istedi. Yeni `gui_qt/i18n.py`
+bunu chameleon'un `shared/i18n/strings.py` deseniyle (`STRINGS` sözlüğü +
+`t(key)`) kurdu, ama TAM çeviri sadece TR+EN için var -- Dashboard/Bulgular/
+Raporlar/Vakalar/Toplanan Dosyalar/Delil Zinciri/Zaman Çizelgesi
+sayfalarının YÜZLERCE kendi metni ve sidebar navigasyon etiketleri hâlâ
+sabit Türkçe (hem görünen etiket hem `main_window.py::SIDEBAR_PAGES`
+üzerinden iç dispatch anahtarı olarak kullanılıyor -- ayırmak ayrı, daha
+riskli bir refactor gerektiriyor). ES/DE/PT/FR `SUPPORTED_LANGUAGES`'de
+SEÇENEK olarak duruyor (kullanıcının istediği 6 dil), ama gerçek çeviri
+YOK -- seçilirse `t()` sessizce EN'e düşüyor VE Ayarlar sayfası bunu AÇIKÇA
+bir notla ("henüz çevrilmedi") gösteriyor, sessizce yanlış/eksik metin
+göstermek yerine. Kullanıcının açık isteği ("kendimiz çevirmeyelim,
+literatüre uygun olsun") gereği bu 4 dilin gerçek çevirisi -- adli bilişim
+terimlerinin o dildeki gerçek kaynaklara karşı doğrulanması -- ayrı,
+büyük bir araştırma+mühendislik aşaması: HENÜZ YAPILMADI, bilerek
+ertelendi (küçükten büyüğe: önce çalışan altyapı + iki tam dil, sonra
+geri kalan diller).
+
+**Doğrulama:** `QWidget.grab()` ile (offscreen'de bile gerçek bir pixmap
+üretiyor) hem koyu hem açık temada Ayarlar sayfası VE Dashboard sayfası
+render edilip görsel olarak incelendi -- tema geçişi SADECE Ayarlar
+sayfasını değil, TÜM kabuğu (sidebar, kartlar, butonlar, tablolar) doğru
+renklerle yeniden çiziyor. 33 yeni test: `test_theme.py` (18 -- mod geçişi,
+türetilmiş `ACCENT_TINT`/`RISK_COLORS` yeniden hesaplanması, açık temanın
+GERÇEK WCAG kontrastı parametrize testlerle), `test_i18n.py` (9 -- dil
+sırası/kapsamı, çevrilmemiş dilin EN'e düşmesi, bilinmeyen anahtarın asla
+patlamaması), `test_gui_qt.py`'ye eklenen 6 yeni entegrasyon testi (radio/
+combo değişince gerçek pencere durumu, tema geçişinin Dashboard'a da
+yansıması, dil acilir listesinin format/sıra doğruluğu). Tüm paket
+(258 test) yeşil.

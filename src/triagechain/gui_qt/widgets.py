@@ -41,9 +41,11 @@ def tint(hex_color: str, alpha: int = 38) -> str:
 class PrimaryButton(QPushButton):
     """Ana aksiyon butonu (marka rengi dolu).
 
-    Yazi rengi chameleon'daki gibi BEYAZ DEGIL, en koyu arka plan rengi:
-    beyaz metin bu yesil dolgunun (#3FB950) uzerinde yalnizca 2.54:1 --
-    okunakli degil. BG_DARKEST ayni dolgu uzerinde 7.45:1.
+    Yazi rengi chameleon'daki gibi SABIT BEYAZ DEGIL, TEXT_ON_ACCENT
+    tokeni: koyu temada ACCENT (#3FB950) acik bir yesil oldugu icin en koyu
+    arka plan rengiyle 7.45:1 veriyor (beyaz olsaydi sadece 2.54:1); acik
+    temada ACCENT (#1A7F37) yeterince koyu oldugu icin beyaz 5.08:1 veriyor
+    -- bkz. theme.py modul basi olcumler.
     """
 
     def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
@@ -53,7 +55,7 @@ class PrimaryButton(QPushButton):
         self.setStyleSheet(f"""
             QPushButton {{
                 background-color: {t.ACCENT};
-                color: {t.BG_DARKEST};
+                color: {t.TEXT_ON_ACCENT};
                 border: none;
                 border-radius: {t.RADIUS_SM}px;
                 padding: 6px 18px;
@@ -62,11 +64,12 @@ class PrimaryButton(QPushButton):
                 font-weight: 600;
             }}
             QPushButton:hover {{ background-color: {t.ACCENT_HOVER}; }}
-            QPushButton:pressed {{ background-color: #34A244; }}
+            QPushButton:pressed {{ background-color: {t.ACCENT_PRESSED}; }}
             QPushButton:disabled {{ background-color: {t.BG_LAYER2}; color: {t.TEXT_SECONDARY}; }}
             /* Odak halkasi da dolgunun kendisine karsi ayirt edilebilmeli:
-            koyu halka yesil dolguya karsi 7.45:1 (beyaz olsaydi 2.54:1). */
-            QPushButton:focus {{ border: 2px solid {t.BG_DARKEST}; padding: 5px 17px; }}
+            TEXT_ON_ACCENT zaten dolguya karsi yeterli kontrasti tasiyor
+            (bkz. yukaridaki not) -- ayni rengi burada da kullaniyoruz. */
+            QPushButton:focus {{ border: 2px solid {t.TEXT_ON_ACCENT}; padding: 5px 17px; }}
         """)
 
 

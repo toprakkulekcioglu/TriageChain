@@ -41,6 +41,8 @@ pytest.importorskip("PySide6")
 
 from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
 
+from triagechain.gui_qt import i18n  # noqa: E402
+from triagechain.gui_qt import theme as t  # noqa: E402
 from triagechain.gui_qt.main_window import SIDEBAR_PAGES, TriageChainWindow  # noqa: E402
 
 CASE_ID = "CASE-GUI-001"
@@ -589,3 +591,94 @@ def test_bozuk_konfigurasyon_ham_traceback_gostermiyor(qt_app, tmp_path):
     assert message.strip()
     # Vaka yuklenemedigi icin aksiyonlar kapali kalmali.
     assert not window.collect_button.isEnabled()
+
+
+# -- Ayarlar sayfasi: tema + dil (canli gecis) -------------------------------
+# t.set_mode/i18n.set_language SUREC GENELINDE PAYLASILAN modul durumu --
+# her testten SONRA varsayilana (dark/tr) donduruluyor ki bu dosyadaki
+# BASKA testler (hepsi varsayilan temayi/dili varsayiyor) bozulmasin.
+
+@pytest.fixture(autouse=True)
+def _reset_theme_and_language_after_test():
+    yield
+    t.set_mode("dark")
+    i18n.set_language("tr")
+
+
+def test_ayarlar_sayfasi_varsayilan_koyu_ve_turkce_gosterir(qt_app):
+    window = TriageChainWindow()
+
+    assert window.theme_dark_radio.isChecked()
+    assert not window.theme_light_radio.isChecked()
+    assert window.language_combo.currentData() == "tr"
+    assert window.windowTitle() == "TriageChain Konsolu"
+
+
+def test_acik_tema_radyosu_canli_gecis_yapiyor(qt_app):
+    window = TriageChainWindow()
+    window._show_settings()
+
+    window.theme_light_radio.setChecked(True)
+
+    assert t.get_mode() == "light"
+    # _apply_theme() kabugu YENIDEN KURDUGU icin eski referanslar gecersiz --
+    # widget'lar YENIDEN alinmali (bkz. main_window.py::_build_shell notu).
+    assert window.stack.currentIndex() == 7  # Ayarlar sayfasinda kaldi
+    assert window.theme_light_radio.isChecked()
+    assert not window.theme_dark_radio.isChecked()
+
+
+def test_koyu_temaya_geri_donus_calisiyor(qt_app):
+    window = TriageChainWindow()
+    window._show_settings()
+    window.theme_light_radio.setChecked(True)
+
+    window.theme_dark_radio.setChecked(True)
+
+    assert t.get_mode() == "dark"
+    assert window.theme_dark_radio.isChecked()
+
+
+def test_dil_secimi_pencere_basligini_degistiriyor(qt_app):
+    window = TriageChainWindow()
+    window._show_settings()
+    en_index = list(i18n.SUPPORTED_LANGUAGES.keys()).index("en")
+
+    window.language_combo.setCurrentIndex(en_index)
+
+    assert i18n.get_language() == "en"
+    assert window.windowTitle() == "TriageChain Console"
+    assert window.stack.currentIndex() == 7
+
+
+def test_dil_acilir_listesi_kod_ve_ad_formatinda_ve_dogru_sirada(qt_app):
+    window = TriageChainWindow()
+    window._show_settings()
+
+    labels = [window.language_combo.itemText(i) for i in range(window.language_combo.count())]
+
+    assert labels[0] == "TR Türkçe"
+    assert labels[1] == "EN English"
+    assert labels[2].startswith("ES Español")
+    assert labels[3].startswith("DE Deutsch")
+    assert labels[4].startswith("PT Português")
+    assert labels[5].startswith("FR Français")
+    # Henuz cevrilmemis diller acikca isaretlenmeli, sessizce eksik
+    # gosterilmemeli (kullaniciyi yanlis bilgilendirmemek icin).
+    for label in labels[2:]:
+        assert "çevrilmedi" in label
+
+
+def test_tema_gecisi_dashboard_sayfasina_da_yansiyor(qt_app, config_path):
+    """Sadece Ayarlar sayfasi degil, TUM kabuk yeniden kuruluyor mu?"""
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+    window._show_settings()
+
+    window.theme_light_radio.setChecked(True)
+
+    assert t.get_mode() == "light"
+    window._show_dashboard()
+    # Kabuk yeniden kurulduktan sonra Dashboard verisi hala dogru --
+    # _refresh() rebuild sonrasi tekrar cagriliyor.
+    assert window.case_pill.text() == CASE_ID
