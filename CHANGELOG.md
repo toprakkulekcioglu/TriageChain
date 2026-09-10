@@ -34,3 +34,11 @@
   açık tema paletinden türetildi) ve çok dil altyapısı (TR/EN tam çevrili;
   ES/DE/PT/FR seçilebilir, henüz çevrilmedi) eklendi; sidebar navigasyonu
   artık dile bağlı olmayan sabit kimliklerle çalışıyor
+- Bulgu işaretleme (Tags), sayfa içi arama, İşaretlenenler özeti, Vaka
+  Notları, CSV dışa aktarma ve PDF dışa aktarma eklendi (Cellebrite Physical
+  Analyzer/Oxygen Forensic Detective'ten esinlenildi)
+- Beşinci tespit motoru: hash listesi (watchlist/IOC) eşleştirme —
+  `triagechain watchlist-check`, toplanan HER dosyanın zaten hesaplanmış
+  hash'ini analistin verdiği bilinen-kötü listesiyle karşılaştırır; hiçbir
+  dış araç çalıştırmaz, bir eşleşme Yönetici Raporu'nda EN GÜÇLÜ risk
+  sinyali (doğrudan "Kritik") sayılır

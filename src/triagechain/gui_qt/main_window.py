@@ -60,6 +60,7 @@ from triagechain.config.loader import (
     resolve_report_path,
     resolve_routing_manifest_path,
     resolve_tags_path,
+    resolve_watchlist_manifest_path,
     resolve_yara_manifest_path,
 )
 from triagechain.core.errors import TriageChainError
@@ -69,6 +70,7 @@ from triagechain.detection.chainsaw_runner import run_chainsaw_detection
 from triagechain.detection.correlation import correlate_findings, correlate_sigma_engines
 from triagechain.detection.models import DetectionManifest, YaraManifest
 from triagechain.detection.runner import run_detection
+from triagechain.detection.watchlist_runner import run_watchlist_check
 from triagechain.detection.yara_runner import run_yara_scan
 from triagechain.gui_qt import case_note_store
 from triagechain.gui_qt import csv_export
@@ -235,6 +237,12 @@ class CaseSnapshot:
     # -- YARA ile AYNI YaraMatch semasini kullanir (bkz. detection/
     # capa_runner.py), risk/korelasyona KATILMAZ (bkz. reporting/executive.py).
     capa_matches: list = field(default_factory=list)
+
+    # "Bulgular" sayfasi icin: hash listesi (watchlist/IOC) manifestindeki TAM
+    # eslesme listesi -- YARA/capa ile AYNI YaraMatch semasini kullanir (bkz.
+    # detection/watchlist_runner.py); capa'nin AKSINE risk hesabina KATILIR
+    # (bkz. reporting/executive.py).
+    watchlist_matches: list = field(default_factory=list)
 
     # "Zaman Çizelgesi" sayfasi icin: MFTECmd/RECmd/EvtxECmd/PECmd
     # ciktilarindan birlestirilmis, kronolojik TimelineEvent listesi
@@ -509,6 +517,18 @@ def read_snapshot(config) -> CaseSnapshot:
         except (OSError, ValueError, KeyError):
             warnings.append("capa_manifest.json okunamadı, bozulmuş olabilir.")
 
+    # Hash listesi (watchlist/IOC) manifesti -- YARA/capa ile AYNI
+    # YaraManifest/YaraMatch semasini kullanir (bkz.
+    # detection/watchlist_runner.py); korelasyona KATILMAZ (ayri bir risk
+    # sinyali olarak reporting/executive.py'de degerlendirilir).
+    watchlist_manifest_path = resolve_watchlist_manifest_path(config)
+    if watchlist_manifest_path.is_file():
+        try:
+            parsed_watchlist = YaraManifest.from_json_file(watchlist_manifest_path)
+            snapshot.watchlist_matches = list(parsed_watchlist.matches)
+        except (OSError, ValueError, KeyError):
+            warnings.append("watchlist_manifest.json okunamadı, bozulmuş olabilir.")
+
     # "Zaman Çizelgesi" sayfası için: MFTECmd/RECmd/EvtxECmd/PECmd
     # çıktılarından birleştirilmiş, kronolojik olay listesi (bkz.
     # reporting/timeline.py). build_timeline() zaten "en iyi çaba" ilkesiyle
@@ -706,6 +726,19 @@ def _action_capa_scan(config) -> str:
     return (
         f"capa taraması bitti: {len(capa_manifest.scanned)} dosya tarandı, "
         f"{len(capa_manifest.matches)} yetenek eşleşmesi bulundu."
+    )
+
+
+def _action_watchlist_check(config) -> str:
+    """CLI'nin 'watchlist-check' komutuyla ayni akis -- toplanmis HER
+    artefaktin hash'ini bilinen-kotu hash listesiyle karsilastirir (bkz.
+    detection/watchlist_runner.py)."""
+    manifest = CollectionManifest.from_json_file(resolve_manifest_path(config))
+    ledger = CustodyLedger(resolve_custody_log_path(config), config.case.case_id)
+    watchlist_manifest = run_watchlist_check(config, manifest, ledger)
+    return (
+        f"Hash listesi kontrolü bitti: {len(watchlist_manifest.scanned)} dosya karşılaştırıldı, "
+        f"{len(watchlist_manifest.matches)} eşleşme bulundu."
     )
 
 
@@ -1567,6 +1600,36 @@ class TriageChainWindow(QMainWindow):
 
         self.capa_panel = capa_panel
         layout.addWidget(capa_panel, stretch=1)
+
+        # Hash listesi (watchlist/IOC) YARA/capa ile AYNI YaraMatch semasini
+        # uretir -- bu yuzden AYNI tablo tasarimini kullaniyoruz. capa'dan
+        # FARKLI olarak (bkz. yukaridaki not) risk hesabina KATILIR (bkz.
+        # reporting/executive.py) -- bu panel de o yuzden ILK sirada, digerleri
+        # gibi en altta degil.
+        watchlist_panel = Card("Hash Listesi (Watchlist) Eşleşmeleri")
+        watchlist_table = QTableWidget(0, 4)
+        watchlist_table.setHorizontalHeaderLabels(["ETİKET", "HASH ALGORİTMASI", "DOSYA", "İŞARET"])
+        _style_ledger_table(watchlist_table)
+        watchlist_header = watchlist_table.horizontalHeader()
+        watchlist_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        watchlist_header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        watchlist_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        watchlist_header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        self.watchlist_table = watchlist_table
+        watchlist_panel.body.addWidget(watchlist_table)
+
+        self.watchlist_empty_note = QLabel(
+            "Henüz hash listesi kontrolü çalıştırılmadı. Dashboard'daki \"Hash Listesi "
+            "Kontrol Et\" butonuyla başlatabilirsiniz."
+        )
+        self.watchlist_empty_note.setStyleSheet(
+            f"color:{t.TEXT_SECONDARY}; font-size:{t.SIZE_BODY}px;"
+        )
+        self.watchlist_empty_note.setWordWrap(True)
+        watchlist_panel.body.addWidget(self.watchlist_empty_note)
+
+        self.watchlist_panel = watchlist_panel
+        layout.addWidget(watchlist_panel, stretch=1)
         return page
 
     def _build_finding_cell(self, finding) -> QWidget:
@@ -1684,6 +1747,7 @@ class TriageChainWindow(QMainWindow):
             (self.chainsaw_table, snap.chainsaw_findings, _finding_matches_query),
             (self.yara_table, snap.yara_matches, _yara_match_matches_query),
             (self.capa_table, snap.capa_matches, _yara_match_matches_query),
+            (self.watchlist_table, snap.watchlist_matches, _yara_match_matches_query),
         ):
             for row, record in enumerate(records):
                 table.setRowHidden(row, not matcher(record, query))
@@ -1701,6 +1765,7 @@ class TriageChainWindow(QMainWindow):
             ("Chainsaw", snap.chainsaw_findings, tag_store.target_id_for_finding),
             ("YARA", snap.yara_matches, tag_store.target_id_for_yara_match),
             ("capa", snap.capa_matches, tag_store.target_id_for_yara_match),
+            ("Watchlist", snap.watchlist_matches, tag_store.target_id_for_yara_match),
         ):
             for record in records:
                 if id_fn(record) in self._tags:
@@ -1756,6 +1821,10 @@ class TriageChainWindow(QMainWindow):
         for engine, table, records, id_fn in (
             ("YARA", self.yara_table, self.snapshot.yara_matches, tag_store.target_id_for_yara_match),
             ("capa", self.capa_table, self.snapshot.capa_matches, tag_store.target_id_for_yara_match),
+            (
+                "Watchlist", self.watchlist_table, self.snapshot.watchlist_matches,
+                tag_store.target_id_for_yara_match,
+            ),
         ):
             for row, match in enumerate(records):
                 if table.isRowHidden(row):
@@ -1894,6 +1963,30 @@ class TriageChainWindow(QMainWindow):
                 row, 3, self._build_tag_cell(tag_store.target_id_for_yara_match(match))
             )
         self.capa_table.resizeRowsToContents()
+
+        has_watchlist_run = bool(snap.watchlist_matches) or (
+            self.config is not None and resolve_watchlist_manifest_path(self.config).is_file()
+        )
+        self.watchlist_panel.setVisible(has_watchlist_run)
+        self.watchlist_empty_note.setVisible(not has_watchlist_run)
+
+        # rule_name "watchlist:<etiket>" bicimindedir (bkz.
+        # detection/watchlist_runner.py) -- burada sadece etiket gosterilir,
+        # onek arayuze sizdirilmaz. meta "hash_algorithm=<algo>" tasir.
+        self.watchlist_table.setRowCount(len(snap.watchlist_matches))
+        for row, match in enumerate(snap.watchlist_matches):
+            _, _, label = match.rule_name.partition(":")
+            self.watchlist_table.setItem(row, 0, QTableWidgetItem(label or match.rule_name))
+            _, _, algo = match.meta.partition("=")
+            self.watchlist_table.setItem(row, 1, QTableWidgetItem(algo or "—"))
+            source_label = MonoLabel(match.source_path)
+            source_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+            self.watchlist_table.setCellWidget(row, 2, source_label)
+            self.watchlist_table.setCellWidget(
+                row, 3, self._build_tag_cell(tag_store.target_id_for_yara_match(match))
+            )
+        self.watchlist_table.resizeRowsToContents()
+
         self._apply_findings_filter()
 
     # -- Raporlar ---------------------------------------------------------
@@ -2295,6 +2388,7 @@ class TriageChainWindow(QMainWindow):
         self.yara_button = SecondaryButton("YARA Tara")
         self.chainsaw_button = SecondaryButton("Chainsaw Tara")
         self.capa_button = SecondaryButton("capa Tara")
+        self.watchlist_button = SecondaryButton("Hash Listesi Kontrol Et")
         self.report_button = SecondaryButton("Rapor Üret")
         for button, action in (
             (self.collect_button, _action_collect),
@@ -2303,6 +2397,7 @@ class TriageChainWindow(QMainWindow):
             (self.yara_button, _action_yara_scan),
             (self.chainsaw_button, _action_chainsaw_scan),
             (self.capa_button, _action_capa_scan),
+            (self.watchlist_button, _action_watchlist_check),
             (self.report_button, _action_report),
         ):
             button.clicked.connect(
@@ -2612,7 +2707,7 @@ class TriageChainWindow(QMainWindow):
         tip = "" if needs_manifest else "Önce toplama çalışmalı (manifest.json yok)."
         for button in (
             self.route_button, self.detect_button, self.yara_button,
-            self.chainsaw_button, self.capa_button, self.report_button,
+            self.chainsaw_button, self.capa_button, self.watchlist_button, self.report_button,
         ):
             button.setEnabled(needs_manifest)
             button.setToolTip(tip)

@@ -21,6 +21,7 @@ from triagechain.config.loader import (
     resolve_manifest_path,
     resolve_report_path,
     resolve_routing_manifest_path,
+    resolve_watchlist_manifest_path,
     resolve_yara_manifest_path,
 )
 from triagechain.config.schema import TriageChainConfig
@@ -101,6 +102,7 @@ def build_report(config: TriageChainConfig) -> Report:
         yara=_yara_summary(config),
         chainsaw=_chainsaw_summary(config),
         capa=_capa_summary(config),
+        watchlist=_watchlist_summary(config),
         correlated_artifacts=correlated_artifacts,
         engine_agreements=engine_agreements,
         timeline=_timeline(config),
@@ -180,6 +182,14 @@ def _capa_summary(config: TriageChainConfig) -> YaraSummary | None:
     YaraManifest/YaraMatch semasini kullanir (bkz. detection/capa_runner.py),
     bu yuzden AYNI ozetleme mantigini paylasir (bkz. _yara_shaped_summary)."""
     return _yara_shaped_summary(resolve_capa_manifest_path(config), "capa")
+
+
+def _watchlist_summary(config: TriageChainConfig) -> YaraSummary | None:
+    """watchlist_manifest.json varsa ozetini dondurur; yoksa None -- YARA/capa
+    ile AYNI YaraManifest/YaraMatch semasini kullanir (bkz.
+    detection/watchlist_runner.py), bu yuzden AYNI ozetleme mantigini
+    paylasir (bkz. _yara_shaped_summary)."""
+    return _yara_shaped_summary(resolve_watchlist_manifest_path(config), "Hash listesi")
 
 
 def _yara_shaped_summary(path: Path, label: str) -> YaraSummary | None:

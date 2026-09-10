@@ -53,7 +53,7 @@ hem tam işlevli bir masaüstü uygulamasından (`triagechain-gui`) kullanılabi
 - **Denetim izi** — her aracın stdout/stderr çıktısı diske yazılır, yolları ve
   çıkış kodu hem `routing_manifest.json`'a hem gözetim zincirine işlenir.
 
-**Dört bağımsız tespit motoru:**
+**Beş bağımsız tespit motoru:**
 
 - **Hayabusa** ve **Chainsaw** — toplanan `.evtx` dosyaları Sigma kurallarıyla
   taranır; İKİ BAĞIMSIZ motor AYNI kural setiyle çalıştırılıp sonuçların
@@ -63,6 +63,10 @@ hem tam işlevli bir masaüstü uygulamasından (`triagechain-gui`) kullanılabi
   (`collection.suspicious_binaries` ile analistin gösterdiği dosyalarda);
   bilerek risk skoruna katılmaz, çünkü "yetenek" tespit eder, kötü amaçlı
   davranış değil.
+- **Hash listesi (watchlist/IOC)** — toplanan HER dosyanın zaten hesaplanmış
+  hash'i, analistin verdiği bilinen-kötü bir listeyle karşılaştırılır; hiçbir
+  dış araç çalıştırmaz (saf Python karşılaştırması) ve bir eşleşme, tam
+  eşleşme olduğu için EN GÜÇLÜ risk sinyali sayılır.
 - **En iyi çaba ayrıştırma** — bir aracın çıktı başlıkları farklıysa koşu
   düşmez: 0 bulgu + bir uyarı kaydedilir, ham çıktı yerinde durur.
 - **Gözetim zinciri** — bulgu başına değil, taranan dosya başına tek bir özet
@@ -141,6 +145,9 @@ triagechain chainsaw-scan --config config/triagechain.example.yaml
 # Statik imza taraması ve PE yetenek analizi
 triagechain yara-scan --config config/triagechain.example.yaml
 triagechain capa-scan --config config/triagechain.example.yaml
+
+# Bilinen-kötü hash listesiyle (watchlist/IOC) karşılaştırma
+triagechain watchlist-check --config config/triagechain.example.yaml
 
 # Rapor üretme (JSON + tek sayfa HTML, zaman çizelgesi dahil)
 triagechain report --config config/triagechain.example.yaml

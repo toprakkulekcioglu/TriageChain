@@ -133,6 +133,14 @@ class Report:
     # amacli davranis" degil -- gercek, zararsiz bir .exe'de bile onlarca
     # capa kurali eslesir (bkz. aldigim_kararlar.md -> "capa entegrasyonu").
     capa: Optional[YaraSummary] = None
+    # YARA/capa ile AYNI YaraSummary/YaraMatch semasini kullanir -- bir
+    # eslesme de onlarinki gibi adlandirilmis bir "kural" (bu durumda
+    # "watchlist:<etiket>") eslesmesidir (bkz. detection/watchlist_runner.py).
+    # capa'nin AKSINE risk hesabina (reporting/executive.py) KATILIR ve GUCLU
+    # bir sinyaldir: bilinen-kotu hash TAM eslesmesi, capa'nin genel "yetenek"
+    # tespitinden ya da bir Sigma kuralinin sezgisel eslesmesinden farkli
+    # olarak yanlis-pozitif riski neredeyse yoktur.
+    watchlist: Optional[YaraSummary] = None
     # MFTECmd/RECmd/EvtxECmd/PECmd ciktilarindan birlestirilmis, kronolojik
     # zaman cizelgesi -- routing_manifest.json yoksa veya araclarin hicbiri
     # CSV uretmemisse bos liste (bkz. reporting/timeline.py).
@@ -150,6 +158,7 @@ class Report:
             ("yara", self.yara),
             ("chainsaw", self.chainsaw),
             ("capa", self.capa),
+            ("watchlist", self.watchlist),
         ):
             if summary is not None:
                 data[key]["started_at_utc"] = _iso(summary.started_at_utc)
@@ -194,6 +203,12 @@ class Report:
             matches = [YaraMatch(**raw) for raw in capa_raw.pop("matches", [])]
             capa = YaraSummary(**_with_times(capa_raw), matches=matches)
 
+        watchlist_raw = data.get("watchlist")
+        watchlist = None
+        if watchlist_raw is not None:
+            matches = [YaraMatch(**raw) for raw in watchlist_raw.pop("matches", [])]
+            watchlist = YaraSummary(**_with_times(watchlist_raw), matches=matches)
+
         return cls(
             case_id=data["case_id"],
             operator=data["operator"],
@@ -212,6 +227,7 @@ class Report:
             yara=yara,
             chainsaw=chainsaw,
             capa=capa,
+            watchlist=watchlist,
             correlated_artifacts=[
                 CorrelatedArtifact(**raw) for raw in data.get("correlated_artifacts", [])
             ],

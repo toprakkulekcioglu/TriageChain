@@ -151,6 +151,7 @@ def render_html(report: Report) -> str:
         + _chainsaw_section(report)
         + _yara_section(report)
         + _capa_section(report)
+        + _watchlist_section(report)
         + _correlation_section(report)
         + _engine_agreements_section(report)
         + _timeline_section(report)
@@ -187,6 +188,8 @@ def _executive_section(report: Report) -> str:
         f'<div class="value">{summary.finding_count}</div></div>'
         f'<div class="stat-tile"><div class="label">Yüksek/kritik bulgu</div>'
         f'<div class="value">{summary.high_severity_count}</div></div>'
+        f'<div class="stat-tile"><div class="label">Hash listesi eşleşmesi</div>'
+        f'<div class="value">{summary.watchlist_match_count}</div></div>'
         '<div class="stat-tile"><div class="label">Kanıt bütünlüğü</div>'
         f'<div class="value">{"Doğrulandı" if summary.chain_is_valid else "BOZULMUŞ"}</div>'
         "</div></div>"
@@ -339,6 +342,18 @@ def _capa_section(report: Report) -> str:
     return _yara_shaped_section(
         report.capa, engine_label="capa", cli_hint="triagechain capa-scan",
         match_heading="capa yetenek eşleşmeleri", match_label="yetenek",
+    )
+
+
+def _watchlist_section(report: Report) -> str:
+    """Hash listesi (watchlist/IOC) eşleştirme özeti + eşleşme tablosu -- YARA
+    ile AYNI YaraSummary/YaraMatch şemasını paylaştığı için AYNI render
+    mantığını kullanır (bkz. _yara_shaped_section). capa'nın AKSİNE bir
+    eşleşme risk seviyesine DOĞRUDAN girer (bkz. reporting/executive.py)."""
+    return _yara_shaped_section(
+        report.watchlist, engine_label="Hash listesi (watchlist)",
+        cli_hint="triagechain watchlist-check",
+        match_heading="Hash listesi eşleşmeleri", match_label="eşleşme",
     )
 
 

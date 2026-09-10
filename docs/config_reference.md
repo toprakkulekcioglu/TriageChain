@@ -205,6 +205,7 @@ değildir.
 | `capa_path` | string (yol) veya `null` | Hayır | `null` | capa çalıştırılabilirinin **mutlak** yolu. Göreli yol `ConfigError` üretir. Diğerleri gibi TriageChain ile dağıtılmaz. |
 | `capa_rules_dir` | string (yol) veya `null` | Hayır | `null` | Özel bir capa kural klasörü — **ZORUNLU DEĞİL**: capa gömülü bir varsayılan kural setiyle kutudan çıktığı gibi çalışır, bu alan sadece bir override'dır. |
 | `capa_timeout_seconds` | tamsayı | Hayır | `1800` | Tek bir dosyanın capa taramasının üst süresi. capa'nın statik analizi (disassembly) Hayabusa/Chainsaw/YARA'dan BELİRGİN şekilde daha yavaştır — gerçek bir notepad.exe'ye karşı ~43 saniye sürdü; büyük/paketlenmiş bir dosya dakikalar alabilir. |
+| `watchlist_hashes_file` | string (yol) veya `null` | Hayır | `null` | Bilinen-kötü hash listesinin (watchlist/IOC) **mutlak** yolu. Diğerlerinin AKSİNE bir "araç yolu" DEĞİL: watchlist eşleştirmesi hiçbir dış program çalıştırmaz, toplama sırasında zaten hesaplanmış `hash_value`'lara karşı saf Python karşılaştırması yapar (bkz. aşağıdaki watchlist bölümü). |
 
 Yalnızca `artifact_type_id == "event_logs"` olan artefaktlar Hayabusa/
 Chainsaw ile taranır; ikisi de Windows olay günlüğü tarayıcısıdır, registry
@@ -214,6 +215,8 @@ gönderilir (bkz. aşağıdaki YARA bölümü). **capa da farklı**: sadece
 `collection.suspicious_binaries`'daki dosyalar (`artifact_type_id ==
 "suspicious_binary"`) taranır — analistin elle işaret ettiği dosyalar
 dışında hiçbir şey capa'ya gönderilmez (bkz. aşağıdaki capa bölümü).
+**watchlist de YARA gibi** toplanan HER artefaktı karşılaştırır, ama hiçbir
+harici araç çağırmaz (bkz. aşağıdaki watchlist bölümü).
 
 Örnek:
 
@@ -230,6 +233,18 @@ detection:
   chainsaw_timeout_seconds: 600
   capa_path: "C:\\Tools\\capa\\capa.exe"
   capa_timeout_seconds: 1800
+  watchlist_hashes_file: "C:\\Vaka\\bilinen-kotu-hashler.txt"
+```
+
+`watchlist_hashes_file` biçimi: satır başına bir girdi, `hash` ya da
+`hash,etiket` ya da `hash etiket` (virgül veya boşluk ile ayrılmış). `#` ile
+başlayan ve boş satırlar yok sayılır. Hash'ler büyük/küçük harf duyarsız
+karşılaştırılır. Örnek:
+
+```
+# Bilinen kötü araçlar
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855,Mimikatz derlemesi
+5d41402abc4b2a76b9719d911017c592,başka bir IOC
 ```
 
 Tespit çıktısı:
@@ -333,6 +348,32 @@ zararsız bir `.exe`'de bile onlarca capa kuralı eşleşir (bkz. gerçek
 notepad.exe testinde 35 eşleşme, hepsi sıradan yetenekler). Bu yüzden
 capa+YARA arasında bir korelasyon de ÜRETİLMEZ (bilinçli bir kapsam
 sınırı, gerekçesi `aldigim_kararlar.md`'de).
+
+### Hash listesi / watchlist (`triagechain watchlist-check`)
+
+Diğer dört motordan (Hayabusa/Chainsaw/YARA/capa) TEMEL mimari farkı:
+`detection/watchlist_runner.py` hiçbir DIŞ ARAÇ/subprocess çağırmaz —
+toplama sırasında zaten hesaplanmış `CollectedArtifact.hash_value`'lara
+karşı SAF PYTHON sözlük karşılaştırması yapar. Bu yüzden mutlak araç yolu,
+zaman aşımı, stdout/stderr log dosyası gibi kavramlar burada YOK; tek
+gereksinim `detection.watchlist_hashes_file`'ın (yukarıda) gösterdiği
+listedir.
+
+YARA ile ortak noktası: toplanan HER artefakt türü karşılaştırılır (capa'nın
+"sadece şüpheli binary" kısıtı YOK). Veri modeli de YARA'nın kullandığı
+`YaraMatch`/`YaraManifest` şeması — bir eşleşme `rule_name = "watchlist:
+<etiket>"`, `tags = "watchlist"`, `meta = "hash_algorithm=<algoritma>"`
+taşır.
+
+```
+<output_dir>/<case_id>/watchlist_manifest.json
+```
+
+**capa'nın AKSİNE watchlist Yönetici Raporu'nun risk hesabına KATILIR** ve
+EN GÜÇLÜ sinyaldir (`reporting/executive.py`): bilinen-kötü bir hash'e TAM
+eşleşme, bir Sigma/YARA kuralının sezgisel eşleşmesinden farklı olarak
+pratikte yanlış-pozitif üretmez — bu yüzden ≥1 eşleşme doğrudan "Kritik"
+risk seviyesine yükseltir (korelasyon/motor ittifakıyla AYNI seviyede).
 
 ### Motor korelasyonu
 

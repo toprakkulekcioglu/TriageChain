@@ -189,19 +189,32 @@
   çıkmıyor). 23 yeni test. Detaylar `aldigim_kararlar.md`'de. Toplam
   299 test.
 
+- **Bilinen hash listesi eşleştirme (Watchlist/IOC matching)** —
+  `detection/watchlist_runner.py`: analistin sağladığı bir hash listesiyle
+  (`detection.watchlist_hashes_file`) toplanan HER artefaktın ZATEN
+  hesaplanmış `hash_value`'su karşılaştırılıyor. Diğer dört motordan
+  (Hayabusa/Chainsaw/YARA/capa) TEMEL mimari farkı: hiçbir DIŞ ARAÇ/
+  subprocess çağrılmıyor — saf Python sözlük karşılaştırması, bu yüzden
+  mutlak araç yolu/zaman aşımı/stdout-stderr log gibi kavramlar yok. Veri
+  modeli YARA/capa ile AYNI `YaraMatch`/`YaraManifest` şeması (reused-schema
+  deseni). **capa'nın AKSİNE** Yönetici Raporu'nun risk hesabına KATILIYOR
+  ve EN GÜÇLÜ sinyal: bilinen-kötü hash'e TAM eşleşme, sezgisel bir kural
+  eşleşmesinden farklı olarak pratikte yanlış-pozitif üretmiyor, bu yüzden
+  ≥1 eşleşme doğrudan "Kritik" risk seviyesine yükseltiyor
+  (`reporting/executive.py`). CLI'ye `watchlist-check` komutu, GUI'ye
+  "Hash Listesi Kontrol Et" butonu ve Bulgular sayfasına eşleşme tablosu
+  eklendi; gerçek KAPE verisiyle (bir dosyanın GERÇEK hash'i watchlist'e
+  yazılıp eşleştiği) uçtan uca doğrulandı
+  (`scripts/system_check.py::check_watchlist_matching_real_hash`). 13 yeni
+  test. Detaylar `aldigim_kararlar.md`'de. Toplam 312 test.
+
 ## Sırada
 
 0. **Şu an sırada (kullanıcının onayladığı sıra):**
-   1. **Bilinen hash listesi eşleştirme (Watchlist/IOC matching)** —
-      analistin sağladığı bir hash listesiyle (bilinen kötü amaçlı dosyalar
-      ya da NSRL tarzı "bilinen iyi" allowlist) toplanan her dosyanın
-      hash'ini karşılaştırıp eşleşenleri işaretler. Zaten her dosya
-      hashleniyor, bu doğal bir uzantı — beşinci, hafif bir "tespit"
-      katmanı, yeni bir dış araç gerekmiyor.
-   2. **Rapor kapak sayfası / imza alanı** — PDF/HTML raporuna, resmi bir
+   1. **Rapor kapak sayfası / imza alanı** — PDF/HTML raporuna, resmi bir
       gözetim zinciri belgesi gibi kullanılabilmesi için basit bir kapak
       (vaka bilgisi + "İnceleyen / İmza / Tarih" satırları).
-   3. **GitHub repo açıklaması** — kısa, tek satırlık metin (proje dosyası
+   2. **GitHub repo açıklaması** — kısa, tek satırlık metin (proje dosyası
       değil, NVIDIA'ya yönlendirilebilir).
 
 1. ~~Hayabusa CSV başlıkları doğrulanamadı~~ **tamamlandı** — kullanıcının

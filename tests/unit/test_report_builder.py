@@ -190,8 +190,8 @@ def test_only_collection_leaves_other_sections_empty(config):
 
     _, _, html_path = write_report(config, report)
     html = html_path.read_text(encoding="utf-8")
-    # Yonlendirme + tespit + Chainsaw + YARA + capa hepsi henuz calismamis.
-    assert html.count("henüz çalıştırılmadı") == 5
+    # Yonlendirme + tespit + Chainsaw + YARA + capa + watchlist hepsi henuz calismamis.
+    assert html.count("henüz çalıştırılmadı") == 6
     assert "GEÇERLİ" in html
 
 
@@ -209,8 +209,8 @@ def test_routing_present_detection_missing(config):
 
     _, _, html_path = write_report(config, report)
     html = html_path.read_text(encoding="utf-8")
-    # Tespit + Chainsaw + YARA + capa henuz calismamis.
-    assert html.count("henüz çalıştırılmadı") == 4
+    # Tespit + Chainsaw + YARA + capa + watchlist henuz calismamis.
+    assert html.count("henüz çalıştırılmadı") == 5
 
 
 def test_all_three_layers_fill_findings_table(config):
@@ -231,8 +231,8 @@ def test_all_three_layers_fill_findings_table(config):
     # Bulgu tablosu: kural/seviye/zaman/bilgisayar
     assert "Mimikatz Detected" in html and "Failed Logon" in html
     assert "WS-01" in html and "2026-01-02 03:04:05.678 +03:00" in html
-    # Yonlendirme + tespit calisti, Chainsaw + YARA + capa henuz calismamis.
-    assert html.count("henüz çalıştırılmadı") == 3
+    # Yonlendirme + tespit calisti, Chainsaw + YARA + capa + watchlist henuz calismamis.
+    assert html.count("henüz çalıştırılmadı") == 4
     # Rapor tek basina okunabilir olmali: bulgular JSON'a da kopyalanir.
     reloaded = Report.from_json_file(json_path)
     assert [f.rule_title for f in reloaded.detection.findings] == [

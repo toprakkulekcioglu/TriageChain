@@ -155,7 +155,26 @@ geliştirmeleri) tamamlanan özellikleri anlatır.
   eşleşiyor (bkz. `aldigim_kararlar.md`). Uzman Raporu'nda ayrı, bilgi
   amaçlı bir bölüm olarak gösteriliyor.
 
-## 8. Otomatik raporlama
+## 8. Bilinen hash listesi eşleştirme (watchlist / IOC)
+
+- Analistin sağladığı bir hash listesiyle (`detection.watchlist_hashes_file`
+  — satır başına `hash` ya da `hash,etiket`) toplanan **HER** artefaktın
+  ZATEN hesaplanmış hash'i karşılaştırılıyor (`triagechain watchlist-check`).
+- Diğer dört motordan (Hayabusa/Chainsaw/YARA/capa) TEMEL mimari farkı:
+  hiçbir DIŞ ARAÇ/subprocess çağrılmıyor — saf Python sözlük karşılaştırması.
+  Bu yüzden mutlak araç yolu, zaman aşımı, stdout/stderr log gibi kavramlar
+  yok; tek gereksinim hash listesi dosyasının kendisi.
+- YARA ile AYNI `YaraMatch`/`YaraManifest` şemasını paylaşıyor (capa'nın da
+  kullandığı reused-schema deseni) — bir eşleşme adlandırılmış bir "kural"
+  (`watchlist:<etiket>`) eşleşmesi olarak modelleniyor.
+- **capa'nın AKSİNE Yönetici Raporu'nun risk hesabına KATILIYOR** ve EN
+  GÜÇLÜ sinyal: bilinen-kötü bir hash'e TAM eşleşme, bir Sigma/YARA
+  kuralının sezgisel eşleşmesinden farklı olarak pratikte yanlış-pozitif
+  üretmiyor, bu yüzden tek bir eşleşme bile doğrudan "Kritik" risk
+  seviyesine yükseltiyor — korelasyon/motor ittifakıyla AYNI seviyede
+  (`reporting/executive.py`).
+
+## 9. Otomatik raporlama
 
 - `triagechain report` tek komutla vakanın tüm çıktılarını birleştirip iki
   dosya üretiyor: **`report.json`** (makine-okur) ve **`report.html`**
@@ -163,8 +182,9 @@ geliştirmeleri) tamamlanan özellikleri anlatır.
 - Raporda vaka bilgisi, toplama özeti, yönlendirme özeti, tespit özetleri
   (Hayabusa VE Chainsaw ayrı ayrı — taranan dosya sayısı, toplam bulgu,
   seviyeye göre dağılım ve bulgu tabloları), YARA eşleşmeleri, capa yetenek
-  eşleşmeleri, iki farklı korelasyon bölümü (Sigma+YARA kesişimi VE
-  Hayabusa+Chainsaw motor ittifakı), **birleşik zaman çizelgesi**
+  eşleşmeleri, hash listesi (watchlist) eşleşmeleri, iki farklı korelasyon
+  bölümü (Sigma+YARA kesişimi VE Hayabusa+Chainsaw motor ittifakı),
+  **birleşik zaman çizelgesi**
   (MFTECmd/RECmd/EvtxECmd/PECmd çıktılarından kronolojik olarak
   birleştirilmiş — Plaso kurulamadığı için onun YERİNE, hiçbir yeni dış
   araç eklemeden; kapsamı TriageChain'in kendi dört aracıyla sınırlı,
@@ -175,26 +195,29 @@ geliştirmeleri) tamamlanan özellikleri anlatır.
   makinede de çalışır): **Yönetici Raporu** (teknik olmayan, Report'un
   gerçek sayılarından deterministik bir kurala göre hesaplanan risk
   seviyesi + düz metin özet — `reporting/executive.py`) ve **Uzman Raporu**
-  (teknik detayın tamamı). Risk kuralı zincir bütünlüğünü, her iki
-  korelasyonu (Sigma+YARA, Hayabusa+Chainsaw) VE her iki motorun (Hayabusa,
-  Chainsaw) bulgularını hesaba katıyor — **capa bilerek hesaba katılmıyor**
-  (bkz. yukarıdaki "PE davranış/yetenek analizi" bölümü).
+  (teknik detayın tamamı). Risk kuralı zincir bütünlüğünü, hash listesi
+  (watchlist) eşleşmelerini, her iki korelasyonu (Sigma+YARA,
+  Hayabusa+Chainsaw) VE her iki motorun (Hayabusa, Chainsaw) bulgularını
+  hesaba katıyor — **capa bilerek hesaba katılmıyor** (bkz. yukarıdaki "PE
+  davranış/yetenek analizi" bölümü), **watchlist ise EN GÜÇLÜ sinyal**
+  olarak katılıyor (bkz. yukarıdaki "Bilinen hash listesi eşleştirme"
+  bölümü).
 - HTML raporun en üstünde büyük ve renkli bir **"Zincir Durumu: GEÇERLİ /
   GEÇERSİZ"** göstergesi var — zincir kırıksa hangi olayda kırıldığı da yazıyor.
 - **Tamamen offline**: HTML'de harici hiçbir CDN, font, script ya da stil
   referansı yok; olay yerinde internetsiz bir makinede açılabiliyor. Dışarıdan
   gelen her metin (dosya yolu, kural adı, olay yükü) HTML kaçışından geçiyor.
 - **Kısmi çalıştırmaya dayanıklı**: `route`/`detect`/`yara-scan`/
-  `chainsaw-scan`/`capa-scan` hiç çalıştırılmadıysa raporun o bölümü
-  "henüz çalıştırılmadı" diyor, komut çökmüyor. Yalnızca toplama manifesti
-  zorunlu; o yoksa komut net bir mesajla duruyor.
+  `chainsaw-scan`/`capa-scan`/`watchlist-check` hiç çalıştırılmadıysa
+  raporun o bölümü "henüz çalıştırılmadı" diyor, komut çökmüyor. Yalnızca
+  toplama manifesti zorunlu; o yoksa komut net bir mesajla duruyor.
 - Raporun yanına **`report.json.sha256`** yazılıyor: raporun kendisinin
   sonradan değişip değişmediği, zincire hiç bakmadan `sha256sum -c` ile
   doğrulanabiliyor.
 - Rapor katmanı gözetim zincirine **yazmıyor**, sadece okuyor: rapor zincirin
   o andaki fotoğrafıdır, kendi varlığıyla onu değiştirmez.
 
-## 9. Metodoloji izlenebilirliği (tekrarlanabilirlik)
+## 10. Metodoloji izlenebilirliği (tekrarlanabilirlik)
 
 Bir bulgu ya da işlem sonucu sorgulandığında "bunu tam olarak hangi kural
 seti üretti" sorusu, kod okunmadan **gözetim zinciri defterinden**
@@ -217,7 +240,7 @@ cevaplanabiliyor:
   içeriğin aynı boyutta değiştirilmesi yakalanmaz (bkz.
   [chain_of_custody.md](chain_of_custody.md)).
 
-## 10. Güvenlik
+## 11. Güvenlik
 
 - **`shell=True` hiçbir yerde kullanılmıyor**: dış araçlar her zaman argüman
   listesiyle çalıştırılıyor, kabuk (shell) devreye hiç girmiyor.
@@ -231,7 +254,7 @@ cevaplanabiliyor:
 - Konfigürasyon (case_id, hedefler, yollar) her şeyden önce doğrulanıyor;
   geçersiz bir konfigürasyonla kısmi/belirsiz bir işlem asla başlamıyor.
 
-## 11. KAPE ile ilişki
+## 12. KAPE ile ilişki
 
 Toplama kataloğundaki yol tanımları, kamuya açık ve açık kaynak olan
 **EricZimmerman/KapeFiles** hedef tanımlarıyla kavramsal olarak uyumludur —
@@ -239,29 +262,31 @@ alınan şey sadece "hangi artefakt nerede durur" bilgisidir. KAPE'nin kendisi
 (kapalı kaynak, Kroll lisanslı) hiçbir yerde çalıştırılmıyor; TriageChain'i
 kullanmak için KAPE kurulumu ya da lisansı gerekmiyor.
 
-## 12. Kullanılabilirlik
+## 13. Kullanılabilirlik
 
 - **CLI**: `triagechain collect --config ...`, `triagechain route --config
   ...`, `triagechain detect --config ...`, `triagechain yara-scan --config
   ...`, `triagechain chainsaw-scan --config ...`, `triagechain capa-scan
-  --config ...`, `triagechain report --config ...`, `triagechain
-  verify-custody --log ... --case-id ...`.
+  --config ...`, `triagechain watchlist-check --config ...`, `triagechain
+  report --config ...`, `triagechain verify-custody --log ... --case-id
+  ...`.
 - **Masaüstü arayüzü** (`triagechain-gui`): `PySide6` ile yazılmış, solda
   sabit sidebar + sağda değişen içerik alanı (`QStackedWidget`) olan tek
   pencereli bir uygulama (`src/triagechain/gui_qt/`). Bir vaka
-  konfigürasyonu (`.yaml`) yüklendikten sonra YEDİ komut da (Toplamayı
-  Başlat / Yönlendir / Tara / YARA Tara / Chainsaw Tara / capa Tara /
-  Rapor Üret) buradan çalıştırılabiliyor; her biri ayrı bir `QThread`'de
-  koştuğu için arayüz donmuyor. **Sidebar'daki sekiz sayfanın hepsi
-  işlevsel** (yer tutucu sayfa yok): Dashboard (metrik kartları +
-  sparkline'lar + zincir durumu rozeti), Toplanan Dosyalar, Delil Zinciri
-  (tam olay listesi), Bulgular (Hayabusa + Chainsaw bulgu tabloları, YARA +
-  capa eşleşmeleri, iki korelasyon vurgusu), Raporlar (Yönetici/Uzman
-  sekmeleri), Vakalar (kardeş vaka klasörlerini bulma) ve Ayarlar (görünüm +
-  dil) — hepsi diskteki manifest/defter dosyalarından her koşudan sonra
-  **yeniden okunarak** besleniyor. Zincir kırıksa kırılma noktasından
-  sonraki satırlar "Şüpheli" olarak işaretleniyor. Yönlendir/Tara/YARA/
-  Chainsaw/capa/Rapor butonları `manifest.json` yoksa kapalı. Ham Python
+  konfigürasyonu (`.yaml`) yüklendikten sonra SEKİZ komut da (Toplamayı
+  Başlat / Yönlendir / Tara / YARA Tara / Chainsaw Tara / capa Tara / Hash
+  Listesi Kontrol Et / Rapor Üret) buradan çalıştırılabiliyor; her biri ayrı
+  bir `QThread`'de koştuğu için arayüz donmuyor. **Sidebar'daki sekiz
+  sayfanın hepsi işlevsel** (yer tutucu sayfa yok): Dashboard (metrik
+  kartları + sparkline'lar + zincir durumu rozeti), Toplanan Dosyalar, Delil
+  Zinciri (tam olay listesi), Bulgular (Hayabusa + Chainsaw bulgu tabloları,
+  YARA + capa + hash listesi eşleşmeleri, iki korelasyon vurgusu), Raporlar
+  (Yönetici/Uzman sekmeleri), Vakalar (kardeş vaka klasörlerini bulma) ve
+  Ayarlar (görünüm + dil) — hepsi diskteki manifest/defter dosyalarından her
+  koşudan sonra **yeniden okunarak** besleniyor. Zincir kırıksa kırılma
+  noktasından sonraki satırlar "Şüpheli" olarak işaretleniyor.
+  Yönlendir/Tara/YARA/Chainsaw/capa/Hash Listesi/Rapor butonları
+  `manifest.json` yoksa kapalı. Ham Python
   hata izlemesi hiçbir yerde gösterilmiyor. Arayüz kendi paleti ve
   **gömülü fontları** (Inter + JetBrains Mono, OFL lisanslı,
   `gui_qt/assets/fonts/`) ile tutarlı bir görünüm sağlıyor — hedef
@@ -296,19 +321,20 @@ kullanmak için KAPE kurulumu ya da lisansı gerekmiyor.
   arayüzü `TriageChainKonsolu.exe` olarak paketliyor — hedef makinede
   Python kurulu olması gerekmiyor.
 - **Bulgu işaretleme (Tags)** (`gui_qt/tag_store.py`): Cellebrite Physical
-  Analyzer'daki "Tags" fikrinden esinlenildi. Bulgular sayfasındaki dört
-  tabloda (Hayabusa/Chainsaw/YARA/capa) her satırın kısa bir not eşliğinde
+  Analyzer'daki "Tags" fikrinden esinlenildi. Bulgular sayfasındaki beş
+  tabloda (Hayabusa/Chainsaw/YARA/capa/Watchlist) her satırın kısa bir not eşliğinde
   işaretlenebilmesi — gözetim zincirine YAZILMAZ (analistin sübjektif
   yorumu, delilin kendisi değil) ve `*_manifest.json` dosyalarından AYRI
   (`tags.json`) tutulur, bir "Tara" koşusu tekrar çalışsa da işaretler
   kaybolmaz (kararlı `target_id`, bkz. `aldigim_kararlar.md`).
-- **Sayfa içi arama**: Bulgular (dört tabloyu BİRDEN filtreleyen tek kutu),
+- **Sayfa içi arama**: Bulgular (beş tabloyu BİRDEN filtreleyen tek kutu),
   Toplanan Dosyalar ve Zaman Çizelgesi sayfalarında canlı satır filtresi —
   Cellebrite'ın genel arama kutusundan esinlenildi, TriageChain'in
   sayfa-tabanlı mimarisine uyacak şekilde uyarlandı.
-- **İşaretlenenler özeti**: Bulgular sayfasının en üstünde, dört tabloya
-  (Hayabusa/Chainsaw/YARA/capa) dağılmış tüm işaretleri tek bir listede
-  toplayan bir kart — Cellebrite'ın işaret inceleme ekranından esinlenildi.
+- **İşaretlenenler özeti**: Bulgular sayfasının en üstünde, beş tabloya
+  (Hayabusa/Chainsaw/YARA/capa/Watchlist) dağılmış tüm işaretleri tek bir
+  listede toplayan bir kart — Cellebrite'ın işaret inceleme ekranından
+  esinlenildi.
 - **Vaka Notları** (`gui_qt/case_note_store.py`): Oxygen Forensic
   Detective'ten esinlenildi. Dashboard'da, tek bir bulguya değil VAKANIN
   GENELİNE ait serbest metin — gözetim zincirine/manifestlere karışmaz,
@@ -326,7 +352,7 @@ kullanmak için KAPE kurulumu ya da lisansı gerekmiyor.
   (`QTextDocument` + `QPrinter`) gerçek bir PDF üretiyor; `report.html`'in
   yerine geçmez, onun kısa bir özetidir.
 
-## 13. Bağımlılık disiplini
+## 14. Bağımlılık disiplini
 
 Dört üçüncü parti kütüphane kullanılıyor: `pydantic` (konfigürasyon
 doğrulama), `PyYAML` (katalog/konfigürasyon okuma), `pywin32` (yalnızca VSS,

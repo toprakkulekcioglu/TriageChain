@@ -199,9 +199,18 @@ class DetectionConfig(BaseModel):
     # alabilir. Bu yuzden varsayilan diger tum zaman asimlarindan uzun.
     capa_timeout_seconds: int = 1800
 
+    # Bilinen hash listesi (watchlist/IOC) eslestirme icin duz metin bir
+    # dosyanin MUTLAK yolu (satir basina bir SHA-256, istege bagli
+    # `<hash>,<etiket>` bicimi) -- None ise kontrol atlanir. DIGERLERINDEN
+    # FARKI: bir DIS ARAC calistirmaz (path/rules_dir cifti YOK), toplama
+    # sirasinda ZATEN hesaplanmis hash'leri Python icinde karsilastirir
+    # (bkz. detection/watchlist_runner.py).
+    watchlist_hashes_file: Optional[str] = None
+
     @field_validator(
         "hayabusa_path", "rules_dir", "yara_path", "yara_rules_file",
         "chainsaw_path", "chainsaw_mapping_file", "capa_path", "capa_rules_dir",
+        "watchlist_hashes_file",
     )
     @classmethod
     def _check_absolute(cls, value: Optional[str]) -> Optional[str]:

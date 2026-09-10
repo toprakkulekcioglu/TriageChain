@@ -63,6 +63,8 @@ def build_report_html(report: Report, summary: ExecutiveSummary) -> str:
     ]
     if summary.yara_match_count:
         rows.append(_field_row("YARA Eşleşmesi", str(summary.yara_match_count)))
+    if summary.watchlist_match_count:
+        rows.append(_field_row("Hash Listesi Eşleşmesi", str(summary.watchlist_match_count)))
     if summary.correlated_count:
         rows.append(_field_row("Sigma + YARA Korelasyonu", str(summary.correlated_count)))
     if summary.engine_agreement_count:

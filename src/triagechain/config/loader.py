@@ -81,6 +81,12 @@ def resolve_capa_manifest_path(config: TriageChainConfig) -> Path:
     return Path(config.collection.output_dir) / config.case.case_id / "capa_manifest.json"
 
 
+def resolve_watchlist_manifest_path(config: TriageChainConfig) -> Path:
+    """Hash listesi (watchlist/IOC) eslestirme manifestinin yolunu dondurur --
+    ayni tek-kaynak mantigi, diger tespit motorlarindan AYRI bir dosya."""
+    return Path(config.collection.output_dir) / config.case.case_id / "watchlist_manifest.json"
+
+
 def resolve_report_path(config: TriageChainConfig) -> Path:
     """Makine-okur raporun (report.json) yolunu dondurur.
 

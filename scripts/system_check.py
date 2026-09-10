@@ -144,6 +144,58 @@ def check_route_real_ez_tools() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Tespit -- hash listesi (watchlist), gercek toplanmis dosyanin GERCEK hash'ine
+# ---------------------------------------------------------------------------
+def check_watchlist_matching_real_hash() -> None:
+    """Gercek KAPE verisini toplar, toplanan dosyalardan BIRININ GERCEK
+    hash_value'sunu bir watchlist dosyasina yazar, sonra watchlist_runner'in
+    o dosyayi GERCEKTEN eslestirdigini dogrular (mock/sahte hash DEGIL --
+    pytest'teki testler zaten sahte hash'lerle bu mantigi kapsiyor, burada
+    amac uctan uca gercek bir CollectedArtifact.hash_value'nun dogru
+    hesaplanip dogru karsilastirildigini gormek)."""
+    if not REAL_KAPE_ROOT.is_dir():
+        raise SkipCheck(f"gercek KAPE verisi yok: {REAL_KAPE_ROOT}")
+
+    from triagechain.collection.collector import run_collection
+    from triagechain.config.schema import TriageChainConfig
+    from triagechain.custody.ledger import CustodyLedger
+    from triagechain.detection.watchlist_runner import run_watchlist_check
+
+    with tempfile.TemporaryDirectory() as tmp:
+        output_dir = Path(tmp) / "output"
+        hashes_file = Path(tmp) / "watchlist.txt"
+
+        base_config = TriageChainConfig(
+            case={"case_id": "SYSCHECK-WATCHLIST", "operator": "system_check"},
+            collection={
+                "targets": ["mft"],
+                "output_dir": str(output_dir),
+                "source_root": str(REAL_KAPE_ROOT / "2026-06-07T220139_user" / "C"),
+            },
+        )
+        ledger = CustodyLedger(
+            output_dir / "SYSCHECK-WATCHLIST" / "custody.jsonl", "SYSCHECK-WATCHLIST"
+        )
+        manifest = run_collection(base_config, ledger)
+        assert manifest.artifacts, "toplama hic artefakt uretmedi"
+        target = manifest.artifacts[0]
+
+        hashes_file.write_text(f"{target.hash_value},SYSCHECK gercek dosya\n", encoding="utf-8")
+        config = TriageChainConfig(
+            case=base_config.case, collection=base_config.collection,
+            detection={"watchlist_hashes_file": str(hashes_file)},
+        )
+
+        watchlist_manifest = run_watchlist_check(config, manifest, ledger)
+
+    assert len(watchlist_manifest.matches) == 1, (
+        f"1 eslesme beklendi, {len(watchlist_manifest.matches)} geldi"
+    )
+    assert watchlist_manifest.matches[0].source_path == target.dest_path
+    assert len(watchlist_manifest.scanned) == len(manifest.artifacts)
+
+
+# ---------------------------------------------------------------------------
 # "Yeni Vaka Oluştur" sihirbazi -- gercek arsiv/gercek veri
 # ---------------------------------------------------------------------------
 def check_wizard_batch_creation_matches_real_kape_layout() -> None:

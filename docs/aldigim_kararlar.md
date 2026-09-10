@@ -2166,3 +2166,75 @@ atlanan), sihirbazın gerçek 3 makinelik KAPE kökünü doğru tespit etmesi,
 kullanıcının gerçek `.rar` dosyasının uçtan uca doğru işlenmesi, gerçek
 araç klasöründe otomatik bulma, gerçek PDF üretimi, tam pencere açık/koyu
 render, ve derlenmiş `.exe`'nin gerçekten açılıp 3 saniye ayakta kalması.
+
+---
+
+## Beşinci tespit motoru: hash listesi (watchlist/IOC) eşleştirme
+
+**Karar:** Kullanıcıya "Cellebrite/Oxygen tükendi, klasik DFIR
+araçlarından (X-Ways/EnCase/Autopsy) ne alınabilir" diye soruldu; üç fikir
+önerildi, kullanıcı sıralamayı ONAYLADI ve "önce roadmap'e işle, sonra
+sırayla yap" dedi. İlk sıradaki: analistin sağladığı bilinen-kötü bir hash
+listesiyle toplanan her dosyanın hash'ini karşılaştırmak. Doğal bir uzantı
+-- her dosya zaten toplama sırasında hash'leniyor (`CollectedArtifact.
+hash_value`), bu yüzden yeni bir dış araca gerek yok.
+
+**Mimari fark (diğer dört motordan):** `detection/watchlist_runner.py`
+hiçbir subprocess ÇAĞIRMAZ -- Hayabusa/Chainsaw/YARA/capa'nın hepsi bir
+harici ikiliyi (`shell=True` YOK, mutlak yol, zaman aşımı, stdout/stderr
+log) sarmalarken, watchlist saf Python sözlük karşılaştırması yapıyor.
+Bu yüzden `DetectionConfig.watchlist_hashes_file` BİLEREK bir "araç yolu"
+gibi tasarlanmadı (diğerlerindeki `..._path` alanlarının aksine) ve
+"tool_unavailable" atlama mantığı sadece "dosya konfigüre edilmemiş/
+bulunamıyor" durumunu kapsıyor.
+
+**Reused-schema deseni burada da uygulandı:** capa'nın YARA'nın
+`YaraMatch`/`YaraManifest` şemasını yeniden kullanma gerekçesiyle AYNI --
+watchlist de (capa gibi) TEK bir dosyaya karşı çalışıp adlandırılmış bir
+"kural" (`rule_name = "watchlist:<etiket>"`) eşleşmesi üretiyor, olay
+tabanlı bir zaman/bilgisayar/kanal bağlamı yok. Yeni bir dataclass/şema
+İCAT EDİLMEDİ.
+
+**Bilinçli mimari sapma -- artefakt başına custody olayı YOK:**
+Hayabusa/Chainsaw/YARA/capa'nın hepsi "dosya başına tek özet olay" yazıyor
+(`*_completed_for_artifact`) çünkü her biri GERÇEK bir dış araç çağırıyor,
+bu da denetlenmesi gereken bir olay. Watchlist'te böyle bir çağrı yok --
+binlerce artefaktı saf Python'da karşılaştırmak için ledger'a binlerce
+olay yazmak hem gereksiz şişme hem de "hangi olay gerçek bir aracı temsil
+ediyor" ayrımını bulanıklaştırırdı. Bunun yerine SADECE
+`watchlist_started`/`watchlist_completed` çifti yazılıyor -- sonucun
+tamamı zaten `watchlist_manifest.json`'da eksiksiz duruyor.
+
+**Risk hesabına capa'nın TERSİNE katılma kararı:** capa "yetenek" tespit
+ettiği için (kötü amaçlı davranış değil, gerçek/zararsız bir `.exe`'de
+bile onlarca eşleşme çıkıyor) bilerek risk hesabından HARİÇ tutulmuştu.
+Watchlist'in doğası TAMAMEN farklı: bir eşleşme, bilinen-kötü bir hash'e
+TAM (byte-birebir) eşleşmedir -- bir Sigma/YARA kuralının sezgisel/
+olasılıksal eşleşmesinden farklı olarak pratikte yanlış-pozitif riski
+YOKTUR. Bu yüzden `reporting/executive.py::assess_risk()`'e YENİ bir kural
+eklendi: ≥1 watchlist eşleşmesi, zincir bütünlüğü kontrolünden HEMEN sonra
+(korelasyon/motor ittifakından bile ÖNCE) doğrudan "Kritik" seviyeye
+yükseltiyor.
+
+**Diğer entegrasyon noktaları** (capa'nın izlediği AYNI desen tekrarlandı):
+`config/loader.py::resolve_watchlist_manifest_path`, CLI `watchlist-check`
+komutu, `Report.watchlist` alanı (`YaraSummary`), `reporting/builder.py`,
+HTML rapora yeni bölüm (`_watchlist_section`, `_yara_shaped_section`
+YENİDEN kullanılarak), GUI'de Dashboard butonu ("Hash Listesi Kontrol Et")
++ Bulgular sayfasında beşinci tablo (ETİKET/HASH ALGORİTMASI/DOSYA/İŞARET
+-- `rule_name`'in `"watchlist:"` önekini ve `meta`'nın `hash_algorithm=`
+önekini arayüzde SIZDIRMAYAN özel bir render, YARA/capa'nın genel
+KURAL/ETİKETLER kolonlarından FARKLI çünkü watchlist'in alan anlamları
+farklı).
+
+**Doğrulama:** 13 yeni birim testi (`test_watchlist_runner.py` --
+`load_watchlist` ayrıştırma: yorum/boş satır/virgüllü-boşluklu etiket/
+büyük-küçük harf duyarsızlık/yinelenen hash son kazanır; `run_watchlist_
+check`: konfigüre değil/dosya yok/eşleşme var/eşleşme yok/çoklu artefakt/
+ledger olayları/manifest+hash kaydı/CLI). `scripts/system_check.py`'ye
+`check_watchlist_matching_real_hash` eklendi -- gerçek KAPE verisini
+toplayıp GERÇEK bir toplanan dosyanın GERÇEK hash'ini bir watchlist
+dosyasına yazıp eşleştiğini doğruluyor (sahte/mock hash DEĞİL). Tüm paket
+(312 test) yeşil; `report.html`'deki "henüz çalıştırılmadı" bölüm
+sayısının değişmesiyle ilgili 4 test assertion'ı (yeni beşinci bölüm
+eklendiği için) güncellendi.

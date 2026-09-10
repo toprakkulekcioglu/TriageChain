@@ -18,6 +18,7 @@ from triagechain.config.loader import (
     resolve_detection_manifest_path,
     resolve_manifest_path,
     resolve_routing_manifest_path,
+    resolve_watchlist_manifest_path,
     resolve_yara_manifest_path,
 )
 from triagechain.core.errors import (
@@ -32,6 +33,7 @@ from triagechain.custody.ledger import CustodyLedger, verify_chain
 from triagechain.detection.capa_runner import run_capa_scan
 from triagechain.detection.chainsaw_runner import run_chainsaw_detection
 from triagechain.detection.runner import run_detection
+from triagechain.detection.watchlist_runner import run_watchlist_check
 from triagechain.detection.yara_runner import run_yara_scan
 from triagechain.reporting.builder import build_report, write_report
 from triagechain.router.runner import run_router
@@ -75,6 +77,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="collection.suspicious_binaries'daki supheli dosyalari capa ile davranis/yetenek analizine tabi tut.",
     )
     capa_scan.add_argument("--config", required=True, help="YAML konfigurasyon dosyasi yolu.")
+
+    watchlist_check = subparsers.add_parser(
+        "watchlist-check",
+        help="Toplanmis HER artefaktin hash'ini bilinen-kotu hash listesiyle (IOC) karsilastir.",
+    )
+    watchlist_check.add_argument("--config", required=True, help="YAML konfigurasyon dosyasi yolu.")
 
     report = subparsers.add_parser(
         "report", help="Vakanin tum ciktilarini tek bir rapora (JSON + HTML) topla."
@@ -329,6 +337,43 @@ def _cmd_capa_scan(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_watchlist_check(args: argparse.Namespace) -> int:
+    """watchlist-check alt komutu -- _cmd_yara_scan ile ayni yapi, ama dis
+    arac cagirmaz (bkz. watchlist_runner.py modul dokstring'i)."""
+    config = load_config(args.config)
+    logging.basicConfig(
+        level=getattr(logging, config.logging.level, logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+
+    manifest_path = resolve_manifest_path(config)
+    if not manifest_path.exists():
+        print(
+            f"Toplama manifesti yok ({manifest_path}); once 'triagechain collect' calistirilmali.",
+            file=sys.stderr,
+        )
+        return 2
+    manifest = CollectionManifest.from_json_file(manifest_path)
+
+    log_path = resolve_custody_log_path(config)
+    ledger = CustodyLedger(log_path, config.case.case_id)
+
+    watchlist_manifest = run_watchlist_check(config, manifest, ledger)
+
+    print(f"Vaka          : {config.case.case_id}")
+    print(f"Kosu (run_id) : {watchlist_manifest.run_id}")
+    print(f"Taranan       : {len(watchlist_manifest.scanned)} dosya")
+    print(f"Eslesme       : {len(watchlist_manifest.matches)} hash listesi eslesmesi")
+    for item in watchlist_manifest.matches:
+        print(f"  - {item.rule_name}: {Path(item.source_path).name}")
+    print(f"Atlanan       : {len(watchlist_manifest.skipped)}")
+    for item in watchlist_manifest.skipped:
+        print(f"  - {item['message']}")
+    print(f"Watchlist manifest : {resolve_watchlist_manifest_path(config)}")
+    print(f"Custody log   : {log_path}")
+    return 0
+
+
 def _cmd_report(args: argparse.Namespace) -> int:
     """report alt komutu."""
     config = load_config(args.config)
@@ -409,6 +454,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cmd_chainsaw_scan(args)
         if args.command == "capa-scan":
             return _cmd_capa_scan(args)
+        if args.command == "watchlist-check":
+            return _cmd_watchlist_check(args)
         if args.command == "report":
             return _cmd_report(args)
         return _cmd_verify_custody(args)

@@ -29,6 +29,7 @@ class ExecutiveSummary:
     high_severity_count: int
     chain_is_valid: bool
     yara_match_count: int
+    watchlist_match_count: int
     correlated_count: int
     engine_agreement_count: int
 
@@ -39,21 +40,33 @@ def assess_risk(report: Report) -> tuple[str, str]:
     Kural (en kotu sinyal kazanir):
     1. Zincir GECERSIZ  -> Kritik (kanit butunlugu kaybi, bulgu sayisindan
        bagimsiz olarak en ciddi sinyal -- bkz. chain_of_custody.md).
-    2. Korelasyon VAR (Sigma VE YARA ayni dosyayi isaretledi) VEYA motor
+    2. >=1 hash listesi (watchlist/IOC) eslesmesi -> Kritik (capa'nin
+       "yetenek" tespitinin VEYA bir Sigma/YARA kuralinin sezgisel
+       eslesmesinin AKSINE, bilinen-kotu bir hash'e TAM eslesme -- yanlis
+       pozitif riski pratikte yok, bu yuzden korelasyon/motor ittifaki ile
+       AYNI seviyede en guclu sinyal, bkz. detection/watchlist_runner.py).
+    3. Korelasyon VAR (Sigma VE YARA ayni dosyayi isaretledi) VEYA motor
        ittifaki VAR (Hayabusa VE Chainsaw ayni kurali ayni dosyada buldu)
        -> Kritik (iki BAGIMSIZ teknigin/motorun ayni sonuca varmasi --
        bkz. correlation.py).
-    3. >=1 high/critical Sigma bulgusu (Hayabusa VEYA Chainsaw) VEYA >=1
+    4. >=1 high/critical Sigma bulgusu (Hayabusa VEYA Chainsaw) VEYA >=1
        YARA eslesmesi -> Yuksek (YARA statik imza eslesmesi kendi basina
        zaten spesifik bir gostergedir, Sigma'nin aksine "dusuk onemli" bir
        YARA kullanimi yaygin degil).
-    4. >=1 bulgu (dusuk/orta Sigma, Hayabusa VEYA Chainsaw) -> Orta
-    5. Hic bulgu yok ama toplama hatasi var -> Dusuk
-    6. Hic bulgu/hata yok -> "Bulgu Yok"
+    5. >=1 bulgu (dusuk/orta Sigma, Hayabusa VEYA Chainsaw) -> Orta
+    6. Hic bulgu yok ama toplama hatasi var -> Dusuk
+    7. Hic bulgu/hata yok -> "Bulgu Yok"
     """
     if not report.chain_status.is_valid:
         return "Kritik", (
             f"Kanıt zincirinin bütünlüğü bozulmuş ({report.chain_status.message})."
+        )
+
+    watchlist_match_count = report.watchlist.match_count if report.watchlist is not None else 0
+    if watchlist_match_count:
+        return "Kritik", (
+            f"{watchlist_match_count} adet dosya, bilinen-kötü hash listesiyle (watchlist/IOC) "
+            "tam olarak eşleşti."
         )
 
     if report.correlated_artifacts:
@@ -108,6 +121,7 @@ def build_executive_summary(report: Report) -> ExecutiveSummary:
                 1 for f in summary.findings if f.level.lower() in ("high", "critical")
             )
     yara_match_count = report.yara.match_count if report.yara is not None else 0
+    watchlist_match_count = report.watchlist.match_count if report.watchlist is not None else 0
     correlated_count = len(report.correlated_artifacts)
     engine_agreement_count = len(report.engine_agreements)
 
@@ -130,6 +144,10 @@ def build_executive_summary(report: Report) -> ExecutiveSummary:
     )
     if yara_match_count:
         narrative += f" Ayrıca {yara_match_count} adet YARA imza eşleşmesi bulundu."
+    if watchlist_match_count:
+        narrative += (
+            f" {watchlist_match_count} adet dosya, bilinen-kötü hash listesiyle eşleşti."
+        )
     if correlated_count:
         narrative += (
             f" Bunlardan {correlated_count} dosya hem davranışsal hem imza tabanlı "
@@ -150,6 +168,7 @@ def build_executive_summary(report: Report) -> ExecutiveSummary:
         high_severity_count=high_severity_count,
         chain_is_valid=report.chain_status.is_valid,
         yara_match_count=yara_match_count,
+        watchlist_match_count=watchlist_match_count,
         correlated_count=correlated_count,
         engine_agreement_count=engine_agreement_count,
     )
