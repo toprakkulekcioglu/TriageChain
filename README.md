@@ -176,6 +176,16 @@ altındaki dosyaları toplar. Yönlendirme ve tespit testleri de gerçek bir EZ
 Tools ikilisi ya da Hayabusa kurulumu gerektirmez: `subprocess.run`
 `unittest.mock` ile yamalanır.
 
+Gerçek araçlara/gerçek veriye karşı (mock'suz) doğrulama için ayrı bir
+script var: `scripts/system_check.py`. `pytest`'in aksine CI'da ÇALIŞMAZ
+(gerçek Windows araçları ve bir geliştiricinin kendi makinesindeki gerçek
+vaka verisi gerektirir) — sadece elle, bu türden bir ortamda çalıştırılır:
+
+```bash
+python scripts/system_check.py            # tüm kontroller
+python scripts/system_check.py --list     # kontrolleri listele
+```
+
 ## Belgeler
 
 - [docs/ozellikler.md](docs/ozellikler.md) — tüm özelliklerin ayrıntılı listesi

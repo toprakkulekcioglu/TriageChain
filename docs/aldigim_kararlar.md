@@ -2127,3 +2127,42 @@ görsel olarak doğrulandı. 23 yeni test: `test_csv_export.py` (4),
 üretimi dahil), `test_gui_qt.py`'ye eklenen 10 (vaka notu kalıcılığı +
 kaydedilmemiş-metin-korunması, işaretlenenler özeti, üç CSV export'u
 "sadece görüneni yazar" davranışı, PDF export). Tüm paket (299 test) yeşil.
+
+---
+
+## `scripts/system_check.py`: gerçek araçlara/gerçek veriye karşı büyüyen, kalıcı sistem testleri
+
+**Karar:** Bu oturum boyunca "gerçekten çalışıyor mu" diye doğrulamak için
+onlarca kez tek seferlik, elle yazılıp atılan `python -c "..."` script'i
+kullanıldı (gerçek KAPE toplama, gerçek EZ Tools yönlendirme, sihirbazın
+gerçek RAR dosyasıyla davranışı, gerçek PDF üretimi, derlenmiş exe'nin
+açılması vb.) -- kullanıcı haklı olarak "her defasında baştan yazmak yerine
+tek, büyüyen bir script'te toplayalım" dedi. `scripts/system_check.py`
+bunu karşılıyor: her kontrol `check_` ile başlayan bağımsız bir fonksiyon,
+script başındaki `_discover_checks()` bunları OTOMATİK bulup listeliyor/
+çalıştırıyor -- yeni bir kontrol eklemek için TEK yapılması gereken yeni
+bir `check_...()` fonksiyonu yazmak, başka hiçbir yeri değiştirmeye gerek
+yok.
+
+**`tests/`'ten BİLİNÇLİ olarak ayrı tutuldu:** `tests/unit/` ve
+`tests/integration/` (adına rağmen) CI'da (ubuntu-latest) da çalışır, bu
+yüzden gerçek Windows araçlarına (Hayabusa, EZ Tools, 7-Zip) ya da bu
+makinedeki gerçek vaka verisine/derlenmiş `.exe`'ye hiç bağımlı OLAMAZ --
+hepsi `unittest.mock.patch` ile mock'lanır (kontrol edildi:
+`tests/integration/test_end_to_end_detection.py` bile gerçek Hayabusa
+çağırmıyor). `system_check.py` TAM TERSİ bir amaca hizmet ediyor --
+dosya adı BİLEREK `test_` ile BAŞLAMIYOR (pytest'in yanlışlıkla toplamaması
+için), sadece bu Windows geliştirme makinesinde elle çalıştırılıyor.
+Gerekli gerçek araç/veri bu makinede yoksa (`SkipCheck`) kontrol
+"ATLANDI" olarak işaretleniyor -- sessizce "GEÇTİ" gibi gösterilmiyor.
+
+**Doğrulama:** Sekiz kontrolün hepsi gerçek veriyle çalıştırıldı -- ilk
+turda `check_route_real_ez_tools` gerçek bir hata YAKALADI (script'in
+kendi kodunda: `RoutingManifest`'in `error_count`/`skipped_count` gibi
+alanları olduğunu VARSAYMIŞTIM, gerçekte `errors`/`skipped` listeleri --
+`len()` ile düzeltildi). Düzeltmeden sonra sekizi de gerçekten geçti:
+gerçek KAPE toplama (384/384), gerçek EZ Tools yönlendirme (0 hata, 8
+atlanan), sihirbazın gerçek 3 makinelik KAPE kökünü doğru tespit etmesi,
+kullanıcının gerçek `.rar` dosyasının uçtan uca doğru işlenmesi, gerçek
+araç klasöründe otomatik bulma, gerçek PDF üretimi, tam pencere açık/koyu
+render, ve derlenmiş `.exe`'nin gerçekten açılıp 3 saniye ayakta kalması.
