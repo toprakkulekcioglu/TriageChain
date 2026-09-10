@@ -191,6 +191,19 @@
 
 ## Sırada
 
+0. **Şu an sırada (kullanıcının onayladığı sıra):**
+   1. **Bilinen hash listesi eşleştirme (Watchlist/IOC matching)** —
+      analistin sağladığı bir hash listesiyle (bilinen kötü amaçlı dosyalar
+      ya da NSRL tarzı "bilinen iyi" allowlist) toplanan her dosyanın
+      hash'ini karşılaştırıp eşleşenleri işaretler. Zaten her dosya
+      hashleniyor, bu doğal bir uzantı — beşinci, hafif bir "tespit"
+      katmanı, yeni bir dış araç gerekmiyor.
+   2. **Rapor kapak sayfası / imza alanı** — PDF/HTML raporuna, resmi bir
+      gözetim zinciri belgesi gibi kullanılabilmesi için basit bir kapak
+      (vaka bilgisi + "İnceleyen / İmza / Tarih" satırları).
+   3. **GitHub repo açıklaması** — kısa, tek satırlık metin (proje dosyası
+      değil, NVIDIA'ya yönlendirilebilir).
+
 1. ~~Hayabusa CSV başlıkları doğrulanamadı~~ **tamamlandı** — kullanıcının
    sağladığı gerçek (saldırıya uğramış) laboratuvar verisiyle 5.124 gerçek
    bulgu üretildi, CSV başlıkları varsayılanla birebir eşleşti, projenin
