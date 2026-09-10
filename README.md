@@ -183,6 +183,12 @@ altındaki dosyaları toplar. Yönlendirme ve tespit testleri de gerçek bir EZ
 Tools ikilisi ya da Hayabusa kurulumu gerektirmez: `subprocess.run`
 `unittest.mock` ile yamalanır.
 
+Tüm testler (eskiden `tests/unit/`/`tests/integration/`e dağılmış onlarca
+dosya) **tek bir dosyada** duruyor: [`tests/test_all.py`](tests/test_all.py).
+Yeni bir test eklenecekse bu dosyanın **sonuna** eklenir; `pytest` tek
+seferde tümünü çalıştırır, ayrı dosya oluşturup ayrı ayrı çalıştırmaya
+gerek kalmaz.
+
 Gerçek araçlara/gerçek veriye karşı (mock'suz) doğrulama için ayrı bir
 script var: `scripts/system_check.py`. `pytest`'in aksine CI'da ÇALIŞMAZ
 (gerçek Windows araçları ve bir geliştiricinin kendi makinesindeki gerçek

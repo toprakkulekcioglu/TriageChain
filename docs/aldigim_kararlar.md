@@ -2238,3 +2238,108 @@ dosyasına yazıp eşleştiğini doğruluyor (sahte/mock hash DEĞİL). Tüm pak
 (312 test) yeşil; `report.html`'deki "henüz çalıştırılmadı" bölüm
 sayısının değişmesiyle ilgili 4 test assertion'ı (yeni beşinci bölüm
 eklendiği için) güncellendi.
+
+---
+
+## Rapor kapak sayfası / imza alanı
+
+**Karar:** Kullanıcının onayladığı sıradaki ikinci madde: PDF/HTML rapora,
+resmi bir gözetim zinciri belgesi gibi (yazdırılıp elle imzalanabilir)
+kullanılabilmesi için basit bir kapak eklendi.
+
+**HTML rapor (`reporting/renderer.py::_cover_section`):** Sekmelerin
+(Yönetici/Uzman) DIŞINA, başlığın hemen altına yerleştirildi -- hangi sekme
+seçili olursa olsun her zaman görünür, çünkü bir kapak sayfası kavramsal
+olarak "içerik" değil, raporun kendisinin kimlik/onay bilgisi. Vaka
+kimliği/operatör/açıklama/üretim zamanı/zincir durumu + üç boş imza satırı
+içeriyor. `@media print { .cover { page-break-after: always; } }` ile
+GERÇEKTEN yazdırıldığında kapak kendi sayfasında kalıyor, geri kalan içerik
+ikinci sayfadan başlıyor -- saf CSS, JS yok (raporun "tamamen offline"
+ilkesiyle tutarlı).
+
+**PDF dışa aktarma (`gui_qt/pdf_export.py`):** "İmza Alanı" başlıklı bir
+tablo, vaka bilgisi tablosunun hemen altına eklendi. `QTextDocument`'in
+sınırlı CSS alt kümesi (flexbox/grid YOK, bkz. modülün önceki kararı)
+yüzünden HTML raporundaki `.sign-line` (flex tabanlı alt çizgi) DEĞİL,
+her satırda `border-bottom` taşıyan bir `<td>` kullanıldı -- aynı görsel
+sonucu (boş, imzalanabilir bir çizgi) farklı bir CSS mekanizmasıyla
+üretiyor.
+
+**Bilinçli tasarım kararı -- imza satırları BOŞ, bir isim UYDURULMADI:**
+`Report.operator` toplama/tarama koşusunu ÇALIŞTIRAN kişi, ama raporu
+resmi olarak İNCELEYEN/ONAYLAYAN kişi (örn. bir amir ya da ikinci bir
+analist) BAŞKA biri olabilir. Bu ayrımı bilmeden `report.operator`'ı
+"İnceleyen" alanına otomatik yazmak yanlış bir imza yerine geçebilirdi --
+bu yüzden üç satır (İnceleyen (Ad Soyad) / İmza / Tarih) da elle
+doldurulmak üzere BOŞ bırakıldı.
+
+**Doğrulama:** `test_report_builder.py`'ye kapağın vaka bilgisini +
+etiketleri içerdiğini VE sekme radyo düğmelerinden ÖNCE geldiğini (HTML
+string sırası üzerinden) doğrulayan 1 yeni test; `test_pdf_export.py`'ye
+"İmza Alanı" bölümünün ve üç etiketin PDF şablonunda bulunduğunu doğrulayan
+1 yeni test. Gerçek PDF üretimi (`scripts/system_check.py::
+check_pdf_export_produces_valid_pdf`) yeniden çalıştırılıp `%PDF-` imzalı,
+geçerli bir dosya ürettiği teyit edildi. Tüm paket (314 test) yeşil.
+
+---
+
+## Tüm pytest testleri tek dosyada birleştirildi: `tests/test_all.py`
+
+**Karar:** Kullanıcının açık isteği: `tests/unit/` (26 dosya) + `tests/
+integration/` (7 dosya), toplam 33 dosya/6854 satır TEK bir dosyada
+(`tests/test_all.py`) birleştirildi. Amaç `scripts/system_check.py`'nin
+zaten izlediği "tek, büyüyen dosya" felsefesinin pytest paketine de
+uygulanması: yeni bir test eklenecekse dosyanın SONUNA eklenir, `pytest`
+tek seferde tümünü çalıştırır.
+
+**Mekanik yaklaşım -- neden AST DEĞİL metin tabanlı (regex) dönüşüm:**
+33 dosyanın modül-seviyesi isimleri (sabitler, yardımcı fonksiyonlar,
+`@pytest.fixture` fonksiyonları, hatta bazı test fonksiyonu adları) birden
+fazla dosyada AYNI (`CASE_ID`, `_make_config`, `_ledger`, `config` fixture,
+`qt_app` fixture, `test_tool_not_configured_is_skipped` vb. -- 29 çakışan
+isim tespit edildi). `ast.unparse()` ile bir AST dönüşümü bu çakışmaları
+güvenle çözebilirdi ama TÜM `#` yorum satırlarını SİLERDİ -- bu proje
+yorumlara (WHY açıklamalarına) ağırlıklı ölçüde dayanıyor, bu kabul
+edilemezdi. Bunun yerine satır-tabanlı regex ile: (1) her dosyadaki
+çakışan isimler dosyaya özgü bir önekle yeniden adlandırıldı (`CASE_ID` ->
+`CAPA_RUNNER_CASE_ID` gibi, çakışmayanlar OLDUĞU GİBİ bırakıldı --
+okunabilirlik için), (2) modül-seviyesi `import` satırları tek bir bloğa
+toplanıp metin bazında dedup edildi, (3) her dosyanın baştaki modül
+docstring'i `#`-yorum bloğuna çevrildi, (4) her bölüm başına hangi orijinal
+dosyadan geldiğini gösteren bir banner yorumu eklendi.
+
+**Bulunan üç gerçek regresyon (mekanik dönüşümün kendi hataları):**
+1. Kelime-sınırı (`\bconfig\b`) tabanlı yeniden adlandırma, `triagechain.
+   config.loader` gibi modül YOLLARININ içindeki "config" parçasını da
+   yanlışlıkla değiştirdi (`.` kelime-sınırı sayıldığı için). **Düzeltme:**
+   rename SADECE gövde (import olmayan) satırlarına, satır-satır uygulanıyor
+   -- hem modül-seviyesi HEM fonksiyon içi (`from x import y`) import
+   satırları TAMAMEN dokunulmadan bırakılıyor.
+2. Aynı kelime-sınırı sorunu, `main(["report", "--config", ...])` gibi bir
+   CLI bayrağı STRING'inin içindeki "config" kelimesini de değiştirip
+   `"--report_builder_config"` gibi geçersiz bir bayrağa dönüştürdü (bir
+   testi gerçekten KIRDI, `pytest` ile yakalandı). **Düzeltme:** rename
+   deseni `(?<!-)\b...` -- bir tire hemen önce geliyorsa eşleşme YAPILMIYOR.
+3. `Path(__file__).resolve().parents[1]` gibi fixture-yolu ifadeleri, dosya
+   `tests/unit/` veya `tests/integration/`den `tests/`e TAŞINDIĞI için bir
+   dizin derinliği AZALDI -- indeks 1 azaltılmadan bırakılsaydı `fixtures/`
+   klasörü yanlış (repo kökü) konuma işaret ederdi. **Düzeltme:** her
+   `parents[N]` -> `parents[N-1]` olarak otomatik ayarlandı.
+
+**QT_QPA_PLATFORM sıralama tuzağı (bulundu, ele alındı):** 4 dosya
+(`test_gui_qt.py`, `test_pdf_export.py`, `test_case_wizard.py`,
+`test_widgets.py`) `os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")`i
+KENDİ import'larından ÖNCE çalıştırıyordu (PySide6 import edilmeden önce
+ayarlanmalı). Birleştirilmiş dosyada bu satır TEK SEFER, dosyanın EN
+BAŞINA (hoisted import bloğundan bile önce) taşındı -- `setdefault`
+idempotent olduğu için 4 orijinal çağrının hepsi güvenle kaldırıldı, aynı
+etki TEK bir çağrıyla korundu.
+
+**Doğrulama:** Dönüşüm scripti (`scratchpad/merge_tests.py`, tek seferlik,
+projeye COMMIT EDİLMEDİ) kendi güvenlik ağlarını içeriyordu: yeniden
+adlandırmadan SONRA hâlâ çakışma var mı (yok), import edilen bir isim
+FARKLI kaynaklardan mı geliyor (yok). Üretilen dosya `ast.parse()` ile
+sözdizimi doğrulandı, SONRA `pytest` ile üç iterasyonda (yukarıdaki üç
+regresyon sırayla bulunup düzeltildi) TAM 314/314 yeşile ulaşıldı --
+birleştirmeden ÖNCEKİ toplam testle (314) birebir aynı sayı, hiçbir test
+sessizce kaybolmadı/atlanmadı. Orijinal 33 dosya `git rm` ile silindi.

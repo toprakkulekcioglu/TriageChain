@@ -208,13 +208,20 @@
   (`scripts/system_check.py::check_watchlist_matching_real_hash`). 13 yeni
   test. Detaylar `aldigim_kararlar.md`'de. Toplam 312 test.
 
+- **Rapor kapak sayfası / imza alanı** — hem `report.html`'e (`_cover_section`,
+  sekmelerin DIŞINDA, her zaman görünür) hem PDF'e (`pdf_export.py`'deki
+  "İmza Alanı" tablosu) eklendi. Vaka bilgisi (kimlik/operatör/açıklama/
+  üretim zamanı/zincir durumu) + BİLEREK BOŞ bırakılmış üç imza satırı
+  ("İnceleyen (Ad Soyad) / İmza / Tarih") — `report.operator` koşuyu
+  ÇALIŞTIRAN kişi, ama raporu resmi olarak İNCELEYEN/ONAYLAYAN başka biri
+  olabilir, bu yüzden bir isim uydurulmadı. HTML'de `@media print`'te kapak
+  kendi sayfasında kalıyor (`page-break-after: always`). 2 yeni test
+  (toplam 314).
+
 ## Sırada
 
 0. **Şu an sırada (kullanıcının onayladığı sıra):**
-   1. **Rapor kapak sayfası / imza alanı** — PDF/HTML raporuna, resmi bir
-      gözetim zinciri belgesi gibi kullanılabilmesi için basit bir kapak
-      (vaka bilgisi + "İnceleyen / İmza / Tarih" satırları).
-   2. **GitHub repo açıklaması** — kısa, tek satırlık metin (proje dosyası
+   1. **GitHub repo açıklaması** — kısa, tek satırlık metin (proje dosyası
       değil, NVIDIA'ya yönlendirilebilir).
 
 1. ~~Hayabusa CSV başlıkları doğrulanamadı~~ **tamamlandı** — kullanıcının

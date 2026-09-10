@@ -44,6 +44,17 @@ def _field_row(label: str, value: str) -> str:
     )
 
 
+def _sign_row(label: str) -> str:
+    """Kapak sayfasindaki bos imza satiri -- alt cizgi bir hucrenin
+    `border-bottom`'uyla cizilir (QTextDocument'in sinirli CSS'i flexbox/
+    grid desteklemiyor, bkz. modul dokstring'i)."""
+    return (
+        f"<tr><td style='width:170px;color:#656D76;padding:16px 10px 4px 0;'>"
+        f"{escape(label)}</td>"
+        "<td style='border-bottom:1px solid #1F2328;padding:16px 0 4px;'>&nbsp;</td></tr>"
+    )
+
+
 def build_report_html(report: Report, summary: ExecutiveSummary) -> str:
     """QTextDocument'in sinirli HTML/CSS alt kumesiyle uyumlu, sade bir
     ozet sayfasi uretir."""
@@ -123,6 +134,13 @@ def build_report_html(report: Report, summary: ExecutiveSummary) -> str:
 
     <table style='margin-top:10px;font-size:12px;'>
     {''.join(rows)}
+    </table>
+
+    <h2 style='color:#1F2328;font-size:14px;margin-top:22px;'>İmza Alanı</h2>
+    <table style='font-size:11px;width:100%;'>
+    {_sign_row("İnceleyen (Ad Soyad)")}
+    {_sign_row("İmza")}
+    {_sign_row("Tarih")}
     </table>
     {findings_section}
 

@@ -202,6 +202,13 @@ geliştirmeleri) tamamlanan özellikleri anlatır.
   davranış/yetenek analizi" bölümü), **watchlist ise EN GÜÇLÜ sinyal**
   olarak katılıyor (bkz. yukarıdaki "Bilinen hash listesi eşleştirme"
   bölümü).
+- **Kapak sayfası / imza alanı**: hem `report.html`'de (sekmelerin DIŞINDA,
+  her zaman görünür — `@media print`'te kendi sayfasında kalıyor) hem
+  PDF'de (bkz. aşağıdaki "PDF dışa aktarma") vaka bilgisi + üç BOŞ imza
+  satırı ("İnceleyen (Ad Soyad) / İmza / Tarih") gösteriliyor — rapor
+  yazdırılıp elle imzalanarak resmi bir gözetim zinciri belgesine
+  dönüşebiliyor. İmza satırları BİLEREK boş: raporu çalıştıran operatör
+  ile resmi olarak inceleyen/onaylayan kişi farklı olabilir.
 - HTML raporun en üstünde büyük ve renkli bir **"Zincir Durumu: GEÇERLİ /
   GEÇERSİZ"** göstergesi var — zincir kırıksa hangi olayda kırıldığı da yazıyor.
 - **Tamamen offline**: HTML'de harici hiçbir CDN, font, script ya da stil
@@ -347,8 +354,9 @@ kullanmak için KAPE kurulumu ya da lisansı gerekmiyor.
   stdlib `csv` yeterli, yeni bağımlılık yok. Excel uyumluluğu için
   `utf-8-sig` (BOM'lu) kullanılıyor.
 - **PDF dışa aktarma** (`gui_qt/pdf_export.py`): Raporlar sayfasında rapor
-  özetini (risk seviyesi, sayılar, bulgu listesi) PDF olarak yazar. Yeni
-  bir bağımlılık EKLENMEDİ — PySide6'nın kendi `QtPrintSupport`'u
+  özetini (risk seviyesi, sayılar, bulgu listesi, "İmza Alanı" — bkz.
+  yukarıdaki "Kapak sayfası / imza alanı") PDF olarak yazar. Yeni bir
+  bağımlılık EKLENMEDİ — PySide6'nın kendi `QtPrintSupport`'u
   (`QTextDocument` + `QPrinter`) gerçek bir PDF üretiyor; `report.html`'in
   yerine geçmez, onun kısa bir özetidir.
 

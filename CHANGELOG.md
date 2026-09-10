@@ -42,3 +42,7 @@
   hash'ini analistin verdiği bilinen-kötü listesiyle karşılaştırır; hiçbir
   dış araç çalıştırmaz, bir eşleşme Yönetici Raporu'nda EN GÜÇLÜ risk
   sinyali (doğrudan "Kritik") sayılır
+- Rapor kapak sayfası / imza alanı: hem `report.html`'e hem PDF'e vaka
+  bilgisi + boş "İnceleyen / İmza / Tarih" satırları eklendi, rapor
+  yazdırılıp elle imzalanarak resmi bir gözetim zinciri belgesine
+  dönüşebiliyor

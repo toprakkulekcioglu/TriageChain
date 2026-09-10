@@ -112,6 +112,16 @@ footer { margin-top: 32px; color: #5b6470; font-size: 12px; }
              border-radius: 6px; padding: 14px 16px; }
 .stat-tile .label { color: #5b6470; font-size: 12.5px; }
 .stat-tile .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+
+/* Kapak sayfasi -- resmi bir gozetim zinciri belgesi gibi yazdirilip elle
+   imzalanabilsin diye bos imza satirlari (bkz. _cover_section). Sekmelerin
+   DISINDA duruyor -- hangi sekme secili olursa olsun her zaman gorunur. */
+.cover { margin: 0 0 24px; }
+.sign-block { margin-top: 18px; display: flex; flex-direction: column; gap: 16px; }
+.sign-row { display: flex; align-items: flex-end; gap: 10px; }
+.sign-row .sign-label { flex: 0 0 190px; font-weight: 600; color: #1c2024; font-size: 13px; }
+.sign-line { flex: 1; border-bottom: 1px solid #1c2024; height: 24px; }
+@media print { .cover { page-break-after: always; } }
 """
 
 
@@ -135,6 +145,7 @@ def render_html(report: Report) -> str:
         f"<h1>{_e(title)}</h1>",
         f'<p class="sub">Rapor üretim zamanı (UTC): {_e(_dt(report.report_generated_at_utc))}'
         f" &middot; rapor koşusu: {_e(report.run_id)}</p>",
+        _cover_section(report),
         '<input type="radio" name="tabs" id="tab-exec" class="tab-input" checked>',
         '<input type="radio" name="tabs" id="tab-expert" class="tab-input">',
         '<div class="tabbar">'
@@ -163,6 +174,42 @@ def render_html(report: Report) -> str:
         "</body></html>",
     ]
     return "\n".join(parts)
+
+
+def _cover_section(report: Report) -> str:
+    """Kapak sayfasi -- vaka bilgisi + bos imza satirlari, raporun resmi bir
+    gozetim zinciri belgesi gibi YAZDIRILIP ELLE imzalanabilmesi icin (bkz.
+    aldigim_kararlar.md). Sekmelerin DISINDA duruyor: hangi sekme secili
+    olursa olsun her zaman gorunur, `@media print`'te kendi sayfasinda kalir
+    (`.cover { page-break-after: always; }`, bkz. yukaridaki CSS).
+
+    Imza satirlari BILEREK BOS: `report.operator` toplama/tarama koşusunu
+    calistiran KISI, ama bu raporu resmi olarak INCELEYEN/ONAYLAYAN kisi
+    baska biri olabilir -- yanlis bir isim/imza uydurmak yerine analistin
+    kendi elle doldurmasina birakiliyor."""
+    status = report.chain_status
+    chain_label = "GEÇERLİ" if status.is_valid else "GEÇERSİZ"
+    rows = _kv_rows(
+        [
+            ("Vaka kimliği", report.case_id),
+            ("Operatör", report.operator),
+            ("Açıklama", report.description or "-"),
+            ("Rapor üretim zamanı (UTC)", _dt(report.report_generated_at_utc)),
+            ("Kanıt zinciri durumu", chain_label),
+        ]
+    )
+    sign_rows = "".join(
+        f'<div class="sign-row"><span class="sign-label">{_e(label)}</span>'
+        '<span class="sign-line"></span></div>'
+        for label in ("İnceleyen (Ad Soyad)", "İmza", "Tarih")
+    )
+    return (
+        '<div class="card cover">'
+        "<h2 style='margin-top:0;'>Vaka Kapak Sayfası</h2>"
+        f"<table>{rows}</table>"
+        f'<div class="sign-block">{sign_rows}</div>'
+        "</div>"
+    )
 
 
 def _executive_section(report: Report) -> str:
