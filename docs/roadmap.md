@@ -162,6 +162,20 @@
   (`test_theme.py`, `test_i18n.py`, `test_gui_qt.py`'ye eklenenler).
   Detaylar `aldigim_kararlar.md`'de. Toplam 258 test.
 
+- **Cellebrite'tan iki fikir taşındı: Bulgu işaretleme (Tags) + sayfa içi
+  arama** -- kullanıcıya Cellebrite Physical Analyzer'ın ekran görüntüsü
+  üzerinden hangi fikirlerin uygun olduğu soruldu, ikisi TriageChain'in
+  kapsamına uydu (mobil extraction/Cloud gibi geri kalanı kapsam dışı
+  bırakıldı). Yeni `gui_qt/tag_store.py`: Bulgular sayfasındaki dört
+  tabloda (Hayabusa/Chainsaw/YARA/capa) her satır kısa bir notla
+  işaretlenebiliyor -- gözetim zincirine YAZILMAZ, ayrı bir `tags.json`'da
+  tutulur, kararlı bir `target_id` sayesinde bir "Tara" koşusu tekrar
+  çalışsa da işaretler kaybolmuyor. Bulgular/Toplanan Dosyalar/Zaman
+  Çizelgesi sayfalarına canlı satır filtreleyen arama kutuları eklendi
+  (Bulgular'daki TEK kutu dört tabloyu birden filtreliyor). `QWidget.
+  grab()` ile görsel doğrulandı. 14 yeni test (`test_tag_store.py` + 4
+  `test_gui_qt.py`). Detaylar `aldigim_kararlar.md`'de. Toplam 276 test.
+
 ## Sırada
 
 1. ~~Hayabusa CSV başlıkları doğrulanamadı~~ **tamamlandı** — kullanıcının

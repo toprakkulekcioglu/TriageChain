@@ -2023,3 +2023,45 @@ RAR/7z dahil), açık/koyu tema + çok dil altyapısı için yeni satırlar
 eklendi. GitHub repo açıklaması güncellenmedi -- bu ortamda kimlik
 doğrulamalı bir `gh`/API erişimi yok, kullanıcının kendisi güncellemesi
 gerekiyor.
+
+---
+
+## Cellebrite'tan iki fikir: Bulgu işaretleme (Tags) + genel arama
+
+**Karar:** Kullanıcıya Cellebrite Physical Analyzer ekran görüntüsü üzerinden
+hangi fikirlerin TriageChain'e taşınabileceği soruldu; iki tanesi hem
+TriageChain'in kapsamına uyuyordu hem gerçek değer katıyordu (mobil
+extraction/Cloud gibi geri kalanı KAPSAM DIŞI bırakıldı, uymuyor):
+
+1. **Bulgu işaretleme (Tags)** -- yeni `gui_qt/tag_store.py`. Bilerek
+   gözetim zincirine (custody.jsonl) YAZILMAZ (zincir sadece toplama/
+   yönlendirme/tespit OLAYLARINI taşır, analistin sübjektif yorumunu değil)
+   ve `*_manifest.json` dosyalarının da PARÇASI DEĞİL (o dosyalar her
+   koşuda YENİDEN üretilir, işaretler bir koşudan diğerine KALICI olmalı) --
+   ayrı bir `tags.json` (`config/loader.py::resolve_tags_path`). Bir Finding/
+   YaraMatch'in kendi ID alanı olmadığı için (bkz. detection/models.py)
+   `target_id_for_finding`/`target_id_for_yara_match` KARARLI bir anahtar
+   üretiyor (source_path+rule+bağlam alanlarının sha256'sı, ilk 16 hex) --
+   aynı bulgu ikinci bir "Tara" koşusundan sonra da AYNI ID'yi alır,
+   işaret kaybolmaz. Bulgular sayfasındaki dört tabloya da (Hayabusa/
+   Chainsaw/YARA/capa) bir "İŞARET" sütunu eklendi -- tıklayınca işaretsizse
+   kısa bir not sorulur (`QInputDialog`, opsiyonel), işaretliyse doğrudan
+   kaldırılır.
+
+2. **Genel arama** -- Cellebrite'ın tek arama kutusundan esinlenildi, ama
+   TriageChain'in sayfa-tabanlı mimarisine uyacak şekilde UYARLANDI: yeni
+   bir çapraz-sayfa sonuç ekranı İCAT EDİLMEDİ, bunun yerine Bulgular/
+   Toplanan Dosyalar/Zaman Çizelgesi sayfalarının HER BİRİNE, o sayfanın
+   ZATEN yüklü verisini (`self.snapshot`) canlı filtreleyen bir arama kutusu
+   eklendi (`QTableWidget.setRowHidden`, satırlar silinmiyor). Bulgular
+   sayfasındaki TEK kutu dört tabloyu (Hayabusa/Chainsaw/YARA/capa) BİRDEN
+   filtreliyor -- Cellebrite'ın "tek kutu, her şeyi arar" hissine en yakın
+   nokta.
+
+**Doğrulama:** `QWidget.grab()` ile gerçek (sahte ama gerçekçi) bulgu
+verisiyle render edildi -- işaretli satır dolu yeşil bookmark, işaretsiz
+boş kontur ikonuyla görsel olarak ayırt ediliyor; arama kutusuna yazınca
+uymayan satırlar gerçekten gizleniyor. 14 yeni test: `test_tag_store.py`
+(10 -- kararlı ID üretimi, round-trip, güncelleme, bozuk dosyada
+patlamama), `test_gui_qt.py`'ye eklenen 4 (işaretleme UI'si + üç sayfanın
+arama filtreleri). Tüm paket (276 test) yeşil.

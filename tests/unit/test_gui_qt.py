@@ -39,9 +39,10 @@ from triagechain.router.models import ProcessedArtifact, RoutingManifest  # noqa
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QApplication, QLabel  # noqa: E402
+from PySide6.QtWidgets import QApplication, QLabel, QToolButton  # noqa: E402
 
 from triagechain.gui_qt import i18n  # noqa: E402
+from triagechain.gui_qt import tag_store  # noqa: E402
 from triagechain.gui_qt import theme as t  # noqa: E402
 from triagechain.gui_qt.main_window import SIDEBAR_PAGES, TriageChainWindow  # noqa: E402
 
@@ -193,6 +194,23 @@ def test_toplanan_dosyalar_sayfasi_gercek_veri(qt_app, config_path):
     assert window.files_footer.text() == "3 dosya toplandı, hepsi doğrulandı."
 
 
+def test_toplanan_dosyalar_arama_kutusu_satirlari_filtreler(qt_app, config_path):
+    """Cellebrite'in genel aramasindan esinlenilen arama -- dosya yoluna
+    gore satirlari canli filtreler."""
+    _write_fake_case(config_path, artifact_count=3)
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+
+    window.files_search.setText("log1")
+
+    assert window.files_table.isRowHidden(0) is True
+    assert window.files_table.isRowHidden(1) is False
+    assert window.files_table.isRowHidden(2) is True
+
+    window.files_search.setText("")
+    assert window.files_table.isRowHidden(0) is False
+
+
 def test_delil_zinciri_sayfasi_vaka_yuklenmeden(qt_app, config_path):
     """Vaka yuklenmeden sayfa cokmemeli, bos/durum mesaji gostermeli."""
     window = TriageChainWindow()
@@ -235,6 +253,68 @@ def test_bulgular_sayfasi_gercek_veri(qt_app, config_path):
     assert window.findings_table.cellWidget(0, 1).text() == "critical"
     assert window.findings_table.item(0, 2).text() == "2026-06-07 22:03:00"
     assert window.findings_subtitle.text() == f"{CASE_ID} · 2 bulgu"
+
+
+def test_bulgular_isaretleme_gorunur_ve_kaldirilabilir(qt_app, config_path):
+    """Cellebrite'in 'Tags' fikrinden esinlenilen isaretleme -- gozetim
+    zincirine YAZILMAZ, ayri bir tags.json'da tutulur (bkz. tag_store.py)."""
+    _write_fake_case(config_path, finding_count=2)
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+
+    target_id = tag_store.target_id_for_finding(window.snapshot.findings[0])
+    assert target_id not in window._tags
+
+    # Dogrudan tag_store uzerinden isaretle (QInputDialog'u tetiklemeden --
+    # o zaten tag_store.py'nin kendi testlerinde ayrica dogrulaniyor) ve
+    # sayfayi yenile -- _on_toggle_tag'in kendisinin yaptigi gibi once
+    # bellekteki _tags'i diskten tazeleyip sonra _refresh_findings cagiriyoruz.
+    tag_store.set_tag(window._tags_path, target_id, "önemli - rapora eklenecek", "test.operator")
+    window._tags = tag_store.load_tags(window._tags_path)
+    window._refresh_findings()
+
+    assert target_id in window._tags
+    cell = window.findings_table.cellWidget(0, 4)
+    btn = cell.findChild(QToolButton)
+    assert btn.toolTip() == "önemli - rapora eklenecek"
+
+    # Zaten isaretli bir hedefe tiklamak dogrudan kaldirir (diyalog acmaz --
+    # bu yuzden headless testte guvenle tiklanabilir).
+    btn.click()
+
+    assert target_id not in window._tags
+    assert tag_store.load_tags(window._tags_path) == {}
+
+
+def test_bulgular_arama_kutusu_dort_tabloyu_birden_filtreler(qt_app, config_path):
+    """Cellebrite'in genel arama kutusundan esinlenildi -- TEK kutu, TUM
+    bulgu tablolarini ayni anda filtreler."""
+    config = _write_fake_case(config_path, finding_count=2)
+    yara_manifest = YaraManifest(case_id=CASE_ID, started_at_utc=START)
+    yara_manifest.matches.append(
+        YaraMatch(
+            artifact_type_id="event_logs", source_path="C:/hedef/log0.evtx",
+            rule_name="Kural 0 Benzer İmza", tags="",
+        )
+    )
+    yara_manifest.to_json_file(resolve_yara_manifest_path(config))
+
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+
+    window.findings_search.setText("Kural 0")
+
+    assert window.findings_table.isRowHidden(0) is False
+    assert window.findings_table.isRowHidden(1) is True
+    assert window.yara_table.isRowHidden(0) is False
+
+    window.findings_search.setText("hiçbir-şeye-uymayan-sorgu")
+    assert window.findings_table.isRowHidden(0) is True
+    assert window.findings_table.isRowHidden(1) is True
+
+    window.findings_search.setText("")
+    assert window.findings_table.isRowHidden(0) is False
+    assert window.findings_table.isRowHidden(1) is False
 
 
 def test_bulgular_sayfasi_yara_ve_korelasyon(qt_app, config_path):
@@ -448,6 +528,41 @@ def test_zaman_cizelgesi_sayfasi_gercek_pecmd_verisiyle_dolar(qt_app, config_pat
     assert window.timeline_table.item(0, 0).text() == "2019-06-05 19:23:00"
     assert window.timeline_table.item(0, 1).text() == "Prefetch"
     assert "1 olay" in window.timeline_subtitle.text()
+
+
+def test_zaman_cizelgesi_arama_kutusu_satirlari_filtreler(qt_app, config_path):
+    """Cellebrite'in genel aramasindan esinlenilen arama -- olay/dosya
+    aciklamasina gore satirlari canli filtreler."""
+    config = _write_fake_case(config_path)
+    output_dir = Path(config.collection.output_dir) / "parsed" / "pecmd" / "prefetch"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "20260101000000_PECmd_Output_Timeline.csv").write_text(
+        "RunTime,ExecutableName\n"
+        "2019-06-05 19:23:00,\\VOLUME{x}\\WINDOWS\\SYSTEM32\\NOTEPAD.EXE\n"
+        "2019-06-05 19:24:00,\\VOLUME{x}\\WINDOWS\\SYSTEM32\\CALC.EXE\n",
+        encoding="utf-8",
+    )
+    routing = RoutingManifest(case_id=CASE_ID, started_at_utc=START, ended_at_utc=START)
+    routing.processed.append(
+        ProcessedArtifact(
+            artifact_type_id="prefetch", tool="pecmd", source_path="APP.pf",
+            output_dir=str(output_dir), exit_code=0, stdout_log_path="", stderr_log_path="",
+            duration_seconds=0.1, processed_at_utc=START,
+        )
+    )
+    routing.to_json_file(resolve_routing_manifest_path(config))
+
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+    assert window.timeline_table.rowCount() == 2
+
+    window.timeline_search.setText("NOTEPAD")
+
+    assert window.timeline_table.isRowHidden(0) is False
+    assert window.timeline_table.isRowHidden(1) is True
+
+    window.timeline_search.setText("")
+    assert window.timeline_table.isRowHidden(1) is False
 
 
 def test_yuklenen_vakada_metrikler_ve_defter_dogru(qt_app, config_path):

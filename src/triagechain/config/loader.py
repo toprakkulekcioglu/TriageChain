@@ -90,6 +90,20 @@ def resolve_report_path(config: TriageChainConfig) -> Path:
     return Path(config.collection.output_dir) / config.case.case_id / "report.json"
 
 
+def resolve_tags_path(config: TriageChainConfig) -> Path:
+    """Analistin bulgu isaretleme (tag/bookmark) notlarinin yolunu dondurur.
+
+    Ayni tek-kaynak mantigi -- ama ONEMLI bir fark: bu dosya gozetim
+    zincirinin (custody.jsonl) veya herhangi bir *_manifest.json'un PARCASI
+    DEGIL. Isaretler analistin SUBJEKTIF notu -- delilin kendisi degil,
+    delile dair bir yorum -- bu yuzden hash zincirine YAZILMAZ (zincir
+    SADECE toplama/yonlendirme/tespit OLAYLARINI tasir) ve manifest
+    dosyalarindan AYRI tutulur (manifestler her kosuda YENIDEN uretilir,
+    isaretler bir kosudan digerine KALICI olmali). Bkz. gui_qt/tag_store.py.
+    """
+    return Path(config.collection.output_dir) / config.case.case_id / "tags.json"
+
+
 def load_config(path: str | Path) -> TriageChainConfig:
     """Konfigurasyon dosyasini okur, dogrular ve model olarak dondurur."""
     config_path = Path(path)

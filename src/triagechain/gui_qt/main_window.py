@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QMainWindow,
     QMenu,
@@ -56,6 +57,7 @@ from triagechain.config.loader import (
     resolve_manifest_path,
     resolve_report_path,
     resolve_routing_manifest_path,
+    resolve_tags_path,
     resolve_yara_manifest_path,
 )
 from triagechain.core.errors import TriageChainError
@@ -68,10 +70,12 @@ from triagechain.detection.runner import run_detection
 from triagechain.detection.yara_runner import run_yara_scan
 from triagechain.gui_qt import i18n
 from triagechain.gui_qt import icons
+from triagechain.gui_qt import tag_store
 from triagechain.gui_qt import theme as t
 from triagechain.gui_qt.case_wizard import NewCaseDialog
 from triagechain.gui_qt.widgets import (
     Card,
+    Input,
     MonoLabel,
     PrimaryButton,
     ProgressBar,
@@ -336,6 +340,47 @@ def _duration_text(started: datetime, ended: Optional[datetime]) -> Optional[str
     if hours:
         return f"{hours}:{minutes:02d}:{seconds:02d}"
     return f"{minutes:02d}:{seconds:02d}"
+
+
+# -- Bulgular sayfasi arama kutusu (Cellebrite'in genel aramasindan esinlenildi)
+def _finding_matches_query(finding, query: str) -> bool:
+    """Hayabusa/Chainsaw bulgusu (ayni Finding semasi) arama sorgusuna uyuyor mu."""
+    if not query:
+        return True
+    haystack = " ".join([
+        finding.rule_title, finding.source_path, finding.computer,
+        finding.channel, finding.event_id, finding.mitre_tags,
+    ]).lower()
+    return query in haystack
+
+
+def _yara_match_matches_query(match, query: str) -> bool:
+    """YARA/capa eslesmesi (ayni YaraMatch semasi) arama sorgusuna uyuyor mu."""
+    if not query:
+        return True
+    haystack = " ".join([match.rule_name, match.source_path, match.tags, match.meta]).lower()
+    return query in haystack
+
+
+# -- Toplanan Dosyalar sayfasi arama kutusu ----------------------------------
+def _artifact_matches_query(artifact, query: str) -> bool:
+    if not query:
+        return True
+    haystack = " ".join([
+        artifact.dest_path, artifact.source_path, artifact.artifact_type_id, artifact.hash_value,
+    ]).lower()
+    return query in haystack
+
+
+# -- Zaman Cizelgesi sayfasi arama kutusu ------------------------------------
+def _timeline_event_matches_query(event, query: str) -> bool:
+    if not query:
+        return True
+    haystack = " ".join([
+        event.timestamp, event.tool, event.activity, event.description,
+        event.source_path, event.detail,
+    ]).lower()
+    return query in haystack
 
 
 def read_snapshot(config) -> CaseSnapshot:
@@ -727,6 +772,12 @@ class TriageChainWindow(QMainWindow):
         self.config_path: Optional[Path] = None
         self.snapshot = CaseSnapshot()
         self._worker: Optional[ActionWorker] = None
+        # Bulgu isaretleri (bkz. tag_store.py) -- vaka yuklenene kadar bos.
+        self._tags: dict[str, tag_store.TagRecord] = {}
+        self._tags_path: Optional[Path] = None
+        self._findings_query = ""
+        self._files_query = ""
+        self._timeline_query = ""
 
         self._build_shell()
         self._refresh()
@@ -908,6 +959,10 @@ class TriageChainWindow(QMainWindow):
         self.files_subtitle.setStyleSheet(f"color:{t.TEXT_SECONDARY}; font-size:{t.SIZE_HELPER}px;")
         layout.addWidget(self.files_subtitle)
 
+        self.files_search = Input("Dosyalarda ara (yol, hash)…")
+        self.files_search.textChanged.connect(self._on_files_search_changed)
+        layout.addWidget(self.files_search)
+
         panel = Card()
         table = QTableWidget(0, 4)
         table.setHorizontalHeaderLabels(["DOSYA", "BOYUT", "TOPLANMA ZAMANI", "SHA-256 HASH"])
@@ -955,6 +1010,15 @@ class TriageChainWindow(QMainWindow):
         row_layout.addStretch()
         return cell
 
+    def _on_files_search_changed(self, text: str) -> None:
+        self._files_query = text.strip().lower()
+        self._apply_files_filter()
+
+    def _apply_files_filter(self) -> None:
+        query = self._files_query
+        for row, artifact in enumerate(self.snapshot.artifacts):
+            self.files_table.setRowHidden(row, not _artifact_matches_query(artifact, query))
+
     def _refresh_files(self) -> None:
         snap = self.snapshot
         if self.config is None:
@@ -972,6 +1036,7 @@ class TriageChainWindow(QMainWindow):
             hash_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
             self.files_table.setCellWidget(row, 3, hash_label)
         _fit_rows_to_cell_widgets(self.files_table)
+        self._apply_files_filter()
 
         if not snap.has_manifest:
             self.files_footer.setText("Henüz bir toplama çalıştırılmadı.")
@@ -1090,6 +1155,10 @@ class TriageChainWindow(QMainWindow):
         )
         layout.addWidget(self.timeline_subtitle)
 
+        self.timeline_search = Input("Zaman çizelgesinde ara (yol, olay, ayrıntı)…")
+        self.timeline_search.textChanged.connect(self._on_timeline_search_changed)
+        layout.addWidget(self.timeline_search)
+
         panel = Card()
         table = QTableWidget(0, 4)
         table.setHorizontalHeaderLabels(["ZAMAN", "KAYNAK", "OLAY", "AYRINTI"])
@@ -1115,6 +1184,15 @@ class TriageChainWindow(QMainWindow):
         layout.addWidget(self.timeline_empty_note)
         return page
 
+    def _on_timeline_search_changed(self, text: str) -> None:
+        self._timeline_query = text.strip().lower()
+        self._apply_timeline_filter()
+
+    def _apply_timeline_filter(self) -> None:
+        query = self._timeline_query
+        for row, event in enumerate(self.snapshot.timeline):
+            self.timeline_table.setRowHidden(row, not _timeline_event_matches_query(event, query))
+
     def _refresh_timeline(self) -> None:
         snap = self.snapshot
         if self.config is None:
@@ -1139,6 +1217,7 @@ class TriageChainWindow(QMainWindow):
             detail_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
             self.timeline_table.setCellWidget(row, 3, detail_label)
         _fit_rows_to_cell_widgets(self.timeline_table, column=3)
+        self._apply_timeline_filter()
 
     # -- Ayarlar ----------------------------------------------------------------
     def _build_settings_page(self) -> QWidget:
@@ -1278,17 +1357,26 @@ class TriageChainWindow(QMainWindow):
         )
         layout.addWidget(self.findings_subtitle)
 
+        # Cellebrite Physical Analyzer'daki genel arama kutusundan esinlenildi
+        # -- TEK bir kutu, asagidaki DORT tabloyu (Hayabusa/YARA/Chainsaw/capa)
+        # birden AYNI ANDA filtreler (bkz. _on_findings_search_changed).
+        self.findings_search = Input("Bulgularda ara (kural adı, dosya, MITRE etiketi)…")
+        self.findings_search.textChanged.connect(self._on_findings_search_changed)
+        layout.addWidget(self.findings_search)
+
         panel = Card()
-        table = QTableWidget(0, 4)
-        table.setHorizontalHeaderLabels(["BULGU", "SEVİYE", "OLAY ZAMANI", "KAYNAK DOSYA"])
+        table = QTableWidget(0, 5)
+        table.setHorizontalHeaderLabels(["BULGU", "SEVİYE", "OLAY ZAMANI", "KAYNAK DOSYA", "İŞARET"])
         _style_ledger_table(table)
         header = table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        # Sutun 1 (StatusBadge) ve 3 (MonoLabel) ozel widget tasiyor -- diger
-        # tablolardaki ayni gerekce (bkz. custody_table yorumu).
+        # Sutun 1 (StatusBadge), 3 (MonoLabel) ve 4 (isaret dugmesi) ozel
+        # widget tasiyor -- diger tablolardaki ayni gerekce (bkz. custody_table
+        # yorumu).
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self.findings_table = table
         panel.body.addWidget(table)
         layout.addWidget(panel, stretch=1)
@@ -1302,13 +1390,14 @@ class TriageChainWindow(QMainWindow):
         self.yara_correlation_note.setVisible(False)
         yara_panel.body.addWidget(self.yara_correlation_note)
 
-        yara_table = QTableWidget(0, 3)
-        yara_table.setHorizontalHeaderLabels(["KURAL", "ETİKETLER", "DOSYA"])
+        yara_table = QTableWidget(0, 4)
+        yara_table.setHorizontalHeaderLabels(["KURAL", "ETİKETLER", "DOSYA", "İŞARET"])
         _style_ledger_table(yara_table)
         yara_header = yara_table.horizontalHeader()
         yara_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         yara_header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         yara_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        yara_header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.yara_table = yara_table
         yara_panel.body.addWidget(yara_table)
 
@@ -1335,14 +1424,17 @@ class TriageChainWindow(QMainWindow):
         # Chainsaw, Hayabusa ile AYNI Finding semasini uretir -- bu yuzden
         # AYNI hucre olceklerini (_build_finding_cell) ve kolon duzenini
         # kullaniyoruz, tekrar tablo tasarimi YAPILMADI.
-        chainsaw_table = QTableWidget(0, 4)
-        chainsaw_table.setHorizontalHeaderLabels(["BULGU", "SEVİYE", "OLAY ZAMANI", "KAYNAK DOSYA"])
+        chainsaw_table = QTableWidget(0, 5)
+        chainsaw_table.setHorizontalHeaderLabels(
+            ["BULGU", "SEVİYE", "OLAY ZAMANI", "KAYNAK DOSYA", "İŞARET"]
+        )
         _style_ledger_table(chainsaw_table)
         chainsaw_header = chainsaw_table.horizontalHeader()
         chainsaw_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         chainsaw_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         chainsaw_header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         chainsaw_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        chainsaw_header.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
         self.chainsaw_table = chainsaw_table
         chainsaw_panel.body.addWidget(chainsaw_table)
 
@@ -1364,13 +1456,14 @@ class TriageChainWindow(QMainWindow):
         # notu YOK: capa risk/korelasyona KATILMAZ (bkz. reporting/
         # executive.py, aldigim_kararlar.md -> "capa entegrasyonu").
         capa_panel = Card("capa Yetenek Eşleşmeleri")
-        capa_table = QTableWidget(0, 3)
-        capa_table.setHorizontalHeaderLabels(["YETENEK", "MITRE ATT&CK", "DOSYA"])
+        capa_table = QTableWidget(0, 4)
+        capa_table.setHorizontalHeaderLabels(["YETENEK", "MITRE ATT&CK", "DOSYA", "İŞARET"])
         _style_ledger_table(capa_table)
         capa_header = capa_table.horizontalHeader()
         capa_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         capa_header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         capa_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        capa_header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.capa_table = capa_table
         capa_panel.body.addWidget(capa_table)
 
@@ -1439,6 +1532,72 @@ class TriageChainWindow(QMainWindow):
         row_layout.addStretch()
         return cell
 
+    def _build_tag_cell(self, target_id: str) -> QWidget:
+        """Bulgu/eslesme satirinin isaretleme (bookmark) dugmesi -- Cellebrite
+        Physical Analyzer'daki 'Tags' fikrinden esinlenildi (bkz.
+        docs/aldigim_kararlar.md). Tiklaninca _on_toggle_tag'i tetikler; not
+        gozetim zincirine YAZILMAZ (bkz. tag_store.py modul basi notu)."""
+        record = self._tags.get(target_id)
+        is_tagged = record is not None
+        color = t.ACCENT_TEXT if is_tagged else t.TEXT_SECONDARY
+
+        btn = QToolButton()
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setToolTip(record.note if (record and record.note) else ("İşareti kaldır" if is_tagged else "İşaretle"))
+        btn.setIcon(icons.icon("bookmark", color=color, size=15))
+        btn.setIconSize(QSize(15, 15))
+        btn.setFixedSize(30, 30)
+        btn.setStyleSheet(f"""
+            QToolButton {{
+                background-color: {tint(t.ACCENT, 30) if is_tagged else 'transparent'};
+                border: none;
+                border-radius: {t.RADIUS_SM}px;
+            }}
+            QToolButton:hover {{ background-color: {t.BG_LAYER2}; }}
+        """)
+        btn.clicked.connect(lambda _checked=False, tid=target_id: self._on_toggle_tag(tid))
+
+        wrap = QWidget()
+        wrap_layout = QHBoxLayout(wrap)
+        wrap_layout.setContentsMargins(0, 0, 0, 0)
+        wrap_layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        return wrap
+
+    def _on_toggle_tag(self, target_id: str) -> None:
+        """Isaretle/isareti kaldir -- yeni bir isaret icin kisa bir not
+        istenir (opsiyonel), var olan bir isaret dogrudan kaldirilir."""
+        if self._tags_path is None:
+            return
+        if target_id in self._tags:
+            tag_store.remove_tag(self._tags_path, target_id)
+        else:
+            note, ok = QInputDialog.getText(self, "Bulguyu İşaretle", "Not (opsiyonel):")
+            if not ok:
+                return
+            operator = self.config.case.operator if self.config is not None else ""
+            tag_store.set_tag(self._tags_path, target_id, note.strip(), operator)
+        self._tags = tag_store.load_tags(self._tags_path)
+        self._refresh_findings()
+
+    def _on_findings_search_changed(self, text: str) -> None:
+        self._findings_query = text.strip().lower()
+        self._apply_findings_filter()
+
+    def _apply_findings_filter(self) -> None:
+        """Bulgular sayfasindaki DORT tabloyu (Hayabusa/Chainsaw/YARA/capa)
+        AYNI arama kutusuyla birlikte filtreler -- Cellebrite'in genel arama
+        kutusundan esinlenildi. Bos sorguda hicbir satir gizlenmez."""
+        query = self._findings_query
+        snap = self.snapshot
+        for table, records, matcher in (
+            (self.findings_table, snap.findings, _finding_matches_query),
+            (self.chainsaw_table, snap.chainsaw_findings, _finding_matches_query),
+            (self.yara_table, snap.yara_matches, _yara_match_matches_query),
+            (self.capa_table, snap.capa_matches, _yara_match_matches_query),
+        ):
+            for row, record in enumerate(records):
+                table.setRowHidden(row, not matcher(record, query))
+
     def _refresh_findings(self) -> None:
         snap = self.snapshot
         if self.config is None:
@@ -1461,6 +1620,9 @@ class TriageChainWindow(QMainWindow):
             source_label = MonoLabel(finding.source_path)
             source_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
             self.findings_table.setCellWidget(row, 3, source_label)
+            self.findings_table.setCellWidget(
+                row, 4, self._build_tag_cell(tag_store.target_id_for_finding(finding))
+            )
         _fit_rows_to_cell_widgets(self.findings_table)
 
         has_yara_run = bool(snap.yara_matches) or (
@@ -1493,6 +1655,9 @@ class TriageChainWindow(QMainWindow):
             source_label = MonoLabel(match.source_path)
             source_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
             self.yara_table.setCellWidget(row, 2, source_label)
+            self.yara_table.setCellWidget(
+                row, 3, self._build_tag_cell(tag_store.target_id_for_yara_match(match))
+            )
         self.yara_table.resizeRowsToContents()
 
         has_chainsaw_run = bool(snap.chainsaw_findings) or (
@@ -1530,6 +1695,9 @@ class TriageChainWindow(QMainWindow):
                     + f"QLabel {{ color: {t.ACCENT_TEXT}; font-weight: 600; }}"
                 )
             self.chainsaw_table.setCellWidget(row, 3, source_label)
+            self.chainsaw_table.setCellWidget(
+                row, 4, self._build_tag_cell(tag_store.target_id_for_finding(finding))
+            )
         _fit_rows_to_cell_widgets(self.chainsaw_table)
 
         has_capa_run = bool(snap.capa_matches) or (
@@ -1545,7 +1713,11 @@ class TriageChainWindow(QMainWindow):
             source_label = MonoLabel(match.source_path)
             source_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
             self.capa_table.setCellWidget(row, 2, source_label)
+            self.capa_table.setCellWidget(
+                row, 3, self._build_tag_cell(tag_store.target_id_for_yara_match(match))
+            )
         self.capa_table.resizeRowsToContents()
+        self._apply_findings_filter()
 
     # -- Raporlar ---------------------------------------------------------
     def _stat_row(self, label_text: str) -> QLabel:
@@ -2173,6 +2345,12 @@ class TriageChainWindow(QMainWindow):
     def _refresh(self) -> None:
         """Diskteki dosyalari yeniden okuyup butun Dashboard'u gunceller."""
         self.snapshot = read_snapshot(self.config) if self.config is not None else CaseSnapshot()
+        if self.config is not None:
+            self._tags_path = resolve_tags_path(self.config)
+            self._tags = tag_store.load_tags(self._tags_path)
+        else:
+            self._tags_path = None
+            self._tags = {}
         self._set_buttons_enabled(True)
         self._refresh_header()
         self._refresh_metrics()

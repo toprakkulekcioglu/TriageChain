@@ -295,6 +295,17 @@ kullanmak için KAPE kurulumu ya da lisansı gerekmiyor.
 - **Standalone `.exe`**: `triagechain_gui.spec` (PyInstaller `--onefile`)
   arayüzü `TriageChainKonsolu.exe` olarak paketliyor — hedef makinede
   Python kurulu olması gerekmiyor.
+- **Bulgu işaretleme (Tags)** (`gui_qt/tag_store.py`): Cellebrite Physical
+  Analyzer'daki "Tags" fikrinden esinlenildi. Bulgular sayfasındaki dört
+  tabloda (Hayabusa/Chainsaw/YARA/capa) her satırın kısa bir not eşliğinde
+  işaretlenebilmesi — gözetim zincirine YAZILMAZ (analistin sübjektif
+  yorumu, delilin kendisi değil) ve `*_manifest.json` dosyalarından AYRI
+  (`tags.json`) tutulur, bir "Tara" koşusu tekrar çalışsa da işaretler
+  kaybolmaz (kararlı `target_id`, bkz. `aldigim_kararlar.md`).
+- **Sayfa içi arama**: Bulgular (dört tabloyu BİRDEN filtreleyen tek kutu),
+  Toplanan Dosyalar ve Zaman Çizelgesi sayfalarında canlı satır filtresi —
+  Cellebrite'ın genel arama kutusundan esinlenildi, TriageChain'in
+  sayfa-tabanlı mimarisine uyacak şekilde uyarlandı.
 
 ## 13. Bağımlılık disiplini
 
