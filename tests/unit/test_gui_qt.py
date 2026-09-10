@@ -39,7 +39,7 @@ from triagechain.router.models import ProcessedArtifact, RoutingManifest  # noqa
 
 pytest.importorskip("PySide6")
 
-from PySide6.QtWidgets import QApplication, QLabel, QToolButton  # noqa: E402
+from PySide6.QtWidgets import QApplication, QFileDialog, QLabel, QToolButton  # noqa: E402
 
 from triagechain.gui_qt import i18n  # noqa: E402
 from triagechain.gui_qt import tag_store  # noqa: E402
@@ -817,3 +817,182 @@ def test_tema_gecisi_dashboard_sayfasina_da_yansiyor(qt_app, config_path):
     # Kabuk yeniden kurulduktan sonra Dashboard verisi hala dogru --
     # _refresh() rebuild sonrasi tekrar cagriliyor.
     assert window.case_pill.text() == CASE_ID
+
+
+# -- Vaka Notlari (Dashboard) -------------------------------------------------
+
+def test_vaka_notu_kaydedilir_ve_diskten_okunur(qt_app, config_path):
+    """Oxygen Forensic Detective'in vaka notu fikrinden esinlenildi -- tek
+    bir bulguya degil VAKANIN GENELINE ait, tag_store'dan AYRI bir dosyada."""
+    _write_fake_case(config_path)
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+
+    assert window.case_note_edit.toPlainText() == ""
+    assert window.case_note_status.text() == "Henüz kaydedilmedi."
+
+    window.case_note_edit.setPlainText("Şüpheli IP: 10.0.0.5, takip edilecek.")
+    window._on_save_case_note()
+
+    assert "test.operator" in window.case_note_status.text()
+    from triagechain.gui_qt import case_note_store
+    saved = case_note_store.load_case_note(window._case_note_path)
+    assert saved.text == "Şüpheli IP: 10.0.0.5, takip edilecek."
+
+
+def test_vaka_notu_ayni_vakada_yenilenince_kaydedilmemis_metni_bozmaz(qt_app, config_path):
+    """Bir aksiyon bitip _refresh() tetiklendiginde (AYNI vaka), kullanicinin
+    o an yazmakta oldugu kaydedilmemis metin sessizce KAYBOLMAMALI."""
+    _write_fake_case(config_path)
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+
+    window.case_note_edit.setPlainText("henüz kaydedilmemiş taslak")
+    window._refresh()  # ayni vaka icin ikinci bir yenileme (orn. bir aksiyon sonrasi)
+
+    assert window.case_note_edit.toPlainText() == "henüz kaydedilmemiş taslak"
+
+
+def test_vaka_notu_farkli_vakaya_gecince_diskten_yeniden_yuklenir(qt_app, config_path, tmp_path):
+    _write_fake_case(config_path)
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+    window.case_note_edit.setPlainText("ilk vakanin notu")
+    window._on_save_case_note()
+
+    # Ikinci, FARKLI bir vaka.
+    second_case_id = "CASE-GUI-002"
+    second_output = tmp_path / "output2"
+    second_config_path = tmp_path / "config2.yaml"
+    second_config_path.write_text(
+        yaml.safe_dump({
+            "case": {"case_id": second_case_id, "operator": "test.operator", "description": ""},
+            "collection": {"targets": ["event_logs"], "output_dir": str(second_output)},
+        }),
+        encoding="utf-8",
+    )
+
+    window.load_config_file(second_config_path)
+
+    assert window.case_note_edit.toPlainText() == ""
+
+
+# -- Bulgular: isaretlenenler ozeti + CSV disa aktarma ------------------------
+
+def test_bulgular_isaretlenenler_ozeti_dogru_gosterir(qt_app, config_path):
+    _write_fake_case(config_path, finding_count=2)
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+
+    target_id = tag_store.target_id_for_finding(window.snapshot.findings[0])
+    tag_store.set_tag(window._tags_path, target_id, "önemli", "yasar")
+    window._tags = tag_store.load_tags(window._tags_path)
+    window._refresh_findings()
+
+    assert window.tagged_table.rowCount() == 1
+    assert window.tagged_table.item(0, 0).text() == "Hayabusa"
+    assert window.tagged_table.item(0, 3).text() == "önemli"
+    assert window.tagged_empty_note.isHidden()
+
+
+def test_bulgular_isaretlenenler_ozeti_bossa_not_gosterir(qt_app, config_path):
+    _write_fake_case(config_path, finding_count=1)
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+
+    assert window.tagged_table.rowCount() == 0
+    assert not window.tagged_empty_note.isHidden()
+
+
+def test_bulgular_csv_disa_aktarma_sadece_gorunen_satirlari_yazar(qt_app, config_path, tmp_path, monkeypatch):
+    """Oxygen'in tablo disa aktarma ozelliginden esinlenildi -- arama
+    filtresinden GECMEYEN (gizli) satirlar CSV'ye YAZILMAMALI."""
+    _write_fake_case(config_path, finding_count=2)
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+    window.findings_search.setText("Kural 0")
+
+    out_path = tmp_path / "bulgular.csv"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **kw: (str(out_path), ""))
+
+    window._on_export_findings_csv()
+
+    assert out_path.is_file()
+    content = out_path.read_text(encoding="utf-8-sig")
+    assert "Kural 0" in content
+    assert "Kural 1" not in content
+
+
+def test_toplanan_dosyalar_csv_disa_aktarma(qt_app, config_path, tmp_path, monkeypatch):
+    _write_fake_case(config_path, artifact_count=2)
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+
+    out_path = tmp_path / "dosyalar.csv"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **kw: (str(out_path), ""))
+
+    window._on_export_files_csv()
+
+    assert out_path.is_file()
+    content = out_path.read_text(encoding="utf-8-sig")
+    assert "log0.evtx" in content
+    assert "log1.evtx" in content
+
+
+def test_zaman_cizelgesi_csv_disa_aktarma(qt_app, config_path, tmp_path, monkeypatch):
+    config = _write_fake_case(config_path)
+    output_dir = Path(config.collection.output_dir) / "parsed" / "pecmd" / "prefetch"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "20260101000000_PECmd_Output_Timeline.csv").write_text(
+        r"RunTime,ExecutableName" "\n"
+        r"2019-06-05 19:23:00,\VOLUME{x}\WINDOWS\SYSTEM32\NOTEPAD.EXE" "\n",
+        encoding="utf-8",
+    )
+    routing = RoutingManifest(case_id=CASE_ID, started_at_utc=START, ended_at_utc=START)
+    routing.processed.append(
+        ProcessedArtifact(
+            artifact_type_id="prefetch", tool="pecmd", source_path="APP.pf",
+            output_dir=str(output_dir), exit_code=0, stdout_log_path="", stderr_log_path="",
+            duration_seconds=0.1, processed_at_utc=START,
+        )
+    )
+    routing.to_json_file(resolve_routing_manifest_path(config))
+
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+
+    out_path = tmp_path / "cizelge.csv"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **kw: (str(out_path), ""))
+
+    window._on_export_timeline_csv()
+
+    assert out_path.is_file()
+    assert "NOTEPAD" in out_path.read_text(encoding="utf-8-sig")
+
+
+# -- Raporlar: PDF disa aktarma ------------------------------------------------
+
+def test_raporlar_pdf_disa_aktarma_gercek_pdf_uretir(qt_app, config_path, tmp_path, monkeypatch):
+    config = _write_fake_case(config_path, artifact_count=3, finding_count=2)
+    report = build_report(config)
+    write_report(config, report)
+
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+    assert window.export_pdf_button.isEnabled()
+
+    out_path = tmp_path / "ozet.pdf"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **kw: (str(out_path), ""))
+
+    window._on_export_report_pdf()
+
+    assert out_path.is_file()
+    assert out_path.read_bytes().startswith(b"%PDF-")
+
+
+def test_raporlar_pdf_butonu_rapor_yokken_kapali(qt_app, config_path):
+    _write_fake_case(config_path)
+    window = TriageChainWindow()
+    window.load_config_file(config_path)
+
+    assert not window.export_pdf_button.isEnabled()

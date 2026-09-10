@@ -176,6 +176,19 @@
   grab()` ile görsel doğrulandı. 14 yeni test (`test_tag_store.py` + 4
   `test_gui_qt.py`). Detaylar `aldigim_kararlar.md`'de. Toplam 276 test.
 
+- **Oxygen Forensic Detective'ten üç fikir + PDF dışa aktarma** --
+  İşaretlenenler özeti (dört tabloya dağılmış Tags'i tek kartta toplar),
+  Vaka Notları (Dashboard'da, vakanın geneline ait serbest metin, ayrı
+  `case_note.json`'da -- kaydedilmemiş metnin aynı vakada tekrar
+  `_refresh()` ile silinmemesi ayrıca doğrulandı), Bulgular/Toplanan
+  Dosyalar/Zaman Çizelgesi'nde CSV dışa aktarma (sadece görünen satırlar,
+  Excel için BOM'lu UTF-8). PDF dışa aktarma (Raporlar sayfası) yeni bir
+  bağımlılık eklemeden PySide6'nın kendi `QtPrintSupport`'uyla gerçek bir
+  PDF üretiyor (`%PDF-` imzalı, elle doğrulandı); offscreen test ortamına
+  özgü zararsız bir COM uyarısı bulunup belgelendi (gerçek uygulamada hiç
+  çıkmıyor). 23 yeni test. Detaylar `aldigim_kararlar.md`'de. Toplam
+  299 test.
+
 ## Sırada
 
 1. ~~Hayabusa CSV başlıkları doğrulanamadı~~ **tamamlandı** — kullanıcının

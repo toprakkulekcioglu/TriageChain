@@ -306,6 +306,25 @@ kullanmak için KAPE kurulumu ya da lisansı gerekmiyor.
   Toplanan Dosyalar ve Zaman Çizelgesi sayfalarında canlı satır filtresi —
   Cellebrite'ın genel arama kutusundan esinlenildi, TriageChain'in
   sayfa-tabanlı mimarisine uyacak şekilde uyarlandı.
+- **İşaretlenenler özeti**: Bulgular sayfasının en üstünde, dört tabloya
+  (Hayabusa/Chainsaw/YARA/capa) dağılmış tüm işaretleri tek bir listede
+  toplayan bir kart — Cellebrite'ın işaret inceleme ekranından esinlenildi.
+- **Vaka Notları** (`gui_qt/case_note_store.py`): Oxygen Forensic
+  Detective'ten esinlenildi. Dashboard'da, tek bir bulguya değil VAKANIN
+  GENELİNE ait serbest metin — gözetim zincirine/manifestlere karışmaz,
+  ayrı bir `case_note.json`'da kalıcı tutulur. Bir aksiyon bitip sayfa
+  yenilense de (aynı vaka içinde) kaydedilmemiş metin korunur, sadece
+  farklı bir vakaya geçilince diskten yeniden yüklenir.
+- **CSV dışa aktarma** (`gui_qt/csv_export.py`): Bulgular, Toplanan
+  Dosyalar ve Zaman Çizelgesi tablolarını (o an EKRANDA GÖRÜNEN, arama
+  filtresinden geçen satırları) CSV'ye yazar — Oxygen'dan esinlenildi,
+  stdlib `csv` yeterli, yeni bağımlılık yok. Excel uyumluluğu için
+  `utf-8-sig` (BOM'lu) kullanılıyor.
+- **PDF dışa aktarma** (`gui_qt/pdf_export.py`): Raporlar sayfasında rapor
+  özetini (risk seviyesi, sayılar, bulgu listesi) PDF olarak yazar. Yeni
+  bir bağımlılık EKLENMEDİ — PySide6'nın kendi `QtPrintSupport`'u
+  (`QTextDocument` + `QPrinter`) gerçek bir PDF üretiyor; `report.html`'in
+  yerine geçmez, onun kısa bir özetidir.
 
 ## 13. Bağımlılık disiplini
 

@@ -104,6 +104,17 @@ def resolve_tags_path(config: TriageChainConfig) -> Path:
     return Path(config.collection.output_dir) / config.case.case_id / "tags.json"
 
 
+def resolve_case_note_path(config: TriageChainConfig) -> Path:
+    """Vakanin GENELINE ait serbest metin notunun yolunu dondurur.
+
+    resolve_tags_path ile AYNI gerekce (gozetim zincirine/manifestlere
+    KARISMAZ, ayri ve kalici bir dosya) -- tek fark isaretlerin (tags.json)
+    aksine bu TEK bir bulguya degil VAKANIN GENELINE ait. Bkz.
+    gui_qt/case_note_store.py.
+    """
+    return Path(config.collection.output_dir) / config.case.case_id / "case_note.json"
+
+
 def load_config(path: str | Path) -> TriageChainConfig:
     """Konfigurasyon dosyasini okur, dogrular ve model olarak dondurur."""
     config_path = Path(path)

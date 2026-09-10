@@ -2065,3 +2065,65 @@ uymayan satırlar gerçekten gizleniyor. 14 yeni test: `test_tag_store.py`
 (10 -- kararlı ID üretimi, round-trip, güncelleme, bozuk dosyada
 patlamama), `test_gui_qt.py`'ye eklenen 4 (işaretleme UI'si + üç sayfanın
 arama filtreleri). Tüm paket (276 test) yeşil.
+
+---
+
+## Oxygen Forensic Detective'ten üç fikir + PDF dışa aktarma
+
+**Karar:** Kullanıcıya Cellebrite'tan sonra Oxygen Forensic Detective'ten
+de hangi fikirlerin uygun olduğu soruldu; üçü + kullanıcının ayrıca istediği
+PDF dışa aktarma eklendi.
+
+**1. İşaretlenenler özeti** -- bir önceki turda eklenen Tags özelliğinin
+doğal devamı: dört tabloya (Hayabusa/Chainsaw/YARA/capa) dağılmış
+işaretler artık Bulgular sayfasının EN ÜSTÜNDE tek bir "İşaretlenenler"
+kartında toplanıyor. `tags.json` sadece `target_id`+not tuttuğu için
+(kaydın kendisini taşımıyor), `_collect_tagged_items()` asıl veriyi
+(`self.snapshot`) yeniden tarayıp her kaydın `target_id`'sini hesaplayıp
+`self._tags`'te arıyor.
+
+**2. Vaka Notları** -- Dashboard'a eklendi. Tags'in AKSİNE tek bir bulguya
+değil VAKANIN GENELİNE ait serbest metin (`gui_qt/case_note_store.py`,
+`tags.json` ile AYNI gerekçe: gözetim zincirine yazılmaz, ayrı bir
+`case_note.json`). **Bulunan gerçek bir UX riski**: `_refresh()` her
+aksiyon bitiminde (toplama/tarama/vb.) çalışıyor -- not kutusunu HER
+`_refresh()`'te diskten yeniden yüklemek, kullanıcının o an yazmakta
+olduğu kaydedilmemiş metni sessizce silerdi. Çözüm: `_case_note_loaded_for`
+(en son hangi `case_id` için diskten yüklendiğini tutar) -- sadece FARKLI
+bir vakaya geçilince yeniden yükleniyor, aynı vakada tekrar `_refresh()`
+çağrılması metni bozmuyor (test edildi).
+
+**3. CSV dışa aktarma** -- Bulgular (dört kaynağı TEK CSV'de birleştirir),
+Toplanan Dosyalar, Zaman Çizelgesi sayfalarına eklendi (`gui_qt/
+csv_export.py`, stdlib `csv`, yeni bağımlılık YOK). BİLİNÇLİ tasarım:
+sadece EKRANDA GÖRÜNEN (arama filtresinden geçen, `isRowHidden()` ile
+kontrol edilen) satırlar yazılır -- "gördüğünü aktar" ilkesi. `utf-8-sig`
+(BOM'lu) kullanıldı: BOM olmadan Excel, Türkçe karakterleri (İ/ş/ğ) yanlış
+kod sayfasıyla açıyor -- bilinen, gerçek bir Excel davranışı.
+
+**4. PDF dışa aktarma (kullanıcının ek isteği)** -- Raporlar sayfasına
+eklendi (`gui_qt/pdf_export.py`). **Yeni bir bağımlılık EKLENMEDİ**:
+PySide6 zaten `QtPrintSupport`'u içeriyor -- `QTextDocument.setHtml()` +
+`QPrinter(OutputFormat.PdfFormat)` ile gerçek bir PDF üretiliyor, elle
+doğrulandı (`%PDF-1.4` imzalı, gerçek bir PDF okuyucuda açılabilir).
+`report.html`'in (renderer.py) TAM CSS'ini/JS sekmelerini YENİDEN
+ÜRETMEYE çalışmıyor -- `QTextDocument`'in HTML/CSS desteği sınırlı bir alt
+küme (flexbox/grid YOK); bunun yerine sade etiketlerle kendi kısa özet
+şablonunu çiziyor, tam teknik detay için hâlâ `report.html`'e yönlendiriyor.
+**Gerçek, zararsız bir bulgu**: `QT_QPA_PLATFORM=offscreen` ortamında
+(sadece testlerde) `document.print_()` çağrısı konsola "Windows fatal
+exception: code 0x80040155" (COM `REGDB_E_CLASSNOTREG`) izi basıyor ama
+PDF yine de doğru üretiliyor ve test geçiyor -- elle doğrulandı: AYNI kod
+`QT_QPA_PLATFORM` ayarlanmadan (gerçek "windows" platformuyla, yani
+paketlenmiş uygulamanın GERÇEKTE çalıştığı koşullarda) çalıştırılınca bu
+iz HİÇ çıkmıyor. Offscreen eklentisinin, gerçek Windows'un sağladığı bir
+yazıcı/font COM kaydını sağlamamasından kaynaklanıyor, Qt bunu içeride
+yakalayıp PDF'i yine de doğru üretiyor -- gerçek uygulamayı ETKİLEMİYOR.
+
+**Doğrulama:** `QWidget.grab()` ile Dashboard'daki (kaydedilmiş, zaman
+damgalı) Vaka Notları kartı ve Bulgular sayfasındaki İşaretlenenler özeti
+görsel olarak doğrulandı. 23 yeni test: `test_csv_export.py` (4),
+`test_case_note_store.py` (5), `test_pdf_export.py` (4 -- gerçek PDF
+üretimi dahil), `test_gui_qt.py`'ye eklenen 10 (vaka notu kalıcılığı +
+kaydedilmemiş-metin-korunması, işaretlenenler özeti, üç CSV export'u
+"sadece görüneni yazar" davranışı, PDF export). Tüm paket (299 test) yeşil.

@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMenu,
+    QPlainTextEdit,
     QPushButton,
     QRadioButton,
     QSizePolicy,
@@ -51,6 +52,7 @@ from triagechain.collection.models import CollectionManifest
 from triagechain.config.loader import (
     load_config,
     resolve_capa_manifest_path,
+    resolve_case_note_path,
     resolve_chainsaw_manifest_path,
     resolve_custody_log_path,
     resolve_detection_manifest_path,
@@ -68,8 +70,11 @@ from triagechain.detection.correlation import correlate_findings, correlate_sigm
 from triagechain.detection.models import DetectionManifest, YaraManifest
 from triagechain.detection.runner import run_detection
 from triagechain.detection.yara_runner import run_yara_scan
+from triagechain.gui_qt import case_note_store
+from triagechain.gui_qt import csv_export
 from triagechain.gui_qt import i18n
 from triagechain.gui_qt import icons
+from triagechain.gui_qt import pdf_export
 from triagechain.gui_qt import tag_store
 from triagechain.gui_qt import theme as t
 from triagechain.gui_qt.case_wizard import NewCaseDialog
@@ -778,6 +783,12 @@ class TriageChainWindow(QMainWindow):
         self._findings_query = ""
         self._files_query = ""
         self._timeline_query = ""
+        # Vaka notu (bkz. case_note_store.py) -- hangi vaka icin en son diskten
+        # YUKLENDIGINI tutar, boylece bir aksiyon bitip _refresh() tetiklenince
+        # kullanicinin YAZMAKTA OLDUGU kaydedilmemis metin ustune yazilmaz
+        # (sadece FARKLI bir vakaya gecilince yeniden yuklenir).
+        self._case_note_path: Optional[Path] = None
+        self._case_note_loaded_for: Optional[str] = None
 
         self._build_shell()
         self._refresh()
@@ -959,9 +970,14 @@ class TriageChainWindow(QMainWindow):
         self.files_subtitle.setStyleSheet(f"color:{t.TEXT_SECONDARY}; font-size:{t.SIZE_HELPER}px;")
         layout.addWidget(self.files_subtitle)
 
+        files_search_row = QHBoxLayout()
         self.files_search = Input("Dosyalarda ara (yol, hash)…")
         self.files_search.textChanged.connect(self._on_files_search_changed)
-        layout.addWidget(self.files_search)
+        files_search_row.addWidget(self.files_search, stretch=1)
+        export_files_btn = SecondaryButton("CSV'ye Aktar")
+        export_files_btn.clicked.connect(self._on_export_files_csv)
+        files_search_row.addWidget(export_files_btn)
+        layout.addLayout(files_search_row)
 
         panel = Card()
         table = QTableWidget(0, 4)
@@ -1018,6 +1034,29 @@ class TriageChainWindow(QMainWindow):
         query = self._files_query
         for row, artifact in enumerate(self.snapshot.artifacts):
             self.files_table.setRowHidden(row, not _artifact_matches_query(artifact, query))
+
+    def _on_export_files_csv(self) -> None:
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Dosyaları CSV'ye Aktar", "toplanan_dosyalar.csv", "CSV (*.csv)"
+        )
+        if not path:
+            return
+        rows = [
+            [
+                artifact.artifact_type_id, artifact.dest_path, artifact.source_path,
+                _human_size(artifact.size_bytes),
+                artifact.collected_at_utc.strftime("%Y-%m-%d %H:%M:%S"),
+                artifact.hash_value,
+            ]
+            for row, artifact in enumerate(self.snapshot.artifacts)
+            if not self.files_table.isRowHidden(row)
+        ]
+        csv_export.write_rows_csv(
+            Path(path),
+            ["TÜR", "HEDEF YOL", "KAYNAK YOL", "BOYUT", "TOPLANMA ZAMANI", "SHA-256"],
+            rows,
+        )
+        self._set_status(f"{len(rows)} dosya CSV'ye aktarıldı: {path}")
 
     def _refresh_files(self) -> None:
         snap = self.snapshot
@@ -1155,9 +1194,14 @@ class TriageChainWindow(QMainWindow):
         )
         layout.addWidget(self.timeline_subtitle)
 
+        timeline_search_row = QHBoxLayout()
         self.timeline_search = Input("Zaman çizelgesinde ara (yol, olay, ayrıntı)…")
         self.timeline_search.textChanged.connect(self._on_timeline_search_changed)
-        layout.addWidget(self.timeline_search)
+        timeline_search_row.addWidget(self.timeline_search, stretch=1)
+        export_timeline_btn = SecondaryButton("CSV'ye Aktar")
+        export_timeline_btn.clicked.connect(self._on_export_timeline_csv)
+        timeline_search_row.addWidget(export_timeline_btn)
+        layout.addLayout(timeline_search_row)
 
         panel = Card()
         table = QTableWidget(0, 4)
@@ -1192,6 +1236,25 @@ class TriageChainWindow(QMainWindow):
         query = self._timeline_query
         for row, event in enumerate(self.snapshot.timeline):
             self.timeline_table.setRowHidden(row, not _timeline_event_matches_query(event, query))
+
+    def _on_export_timeline_csv(self) -> None:
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Zaman Çizelgesini CSV'ye Aktar", "zaman_cizelgesi.csv", "CSV (*.csv)"
+        )
+        if not path:
+            return
+        rows = [
+            [
+                event.timestamp, _TIMELINE_TOOL_LABELS.get(event.tool, event.tool),
+                event.activity, event.description, event.source_path, event.detail,
+            ]
+            for row, event in enumerate(self.snapshot.timeline)
+            if not self.timeline_table.isRowHidden(row)
+        ]
+        csv_export.write_rows_csv(
+            Path(path), ["ZAMAN", "KAYNAK", "ETKİNLİK", "OLAY", "DOSYA", "AYRINTI"], rows
+        )
+        self._set_status(f"{len(rows)} olay CSV'ye aktarıldı: {path}")
 
     def _refresh_timeline(self) -> None:
         snap = self.snapshot
@@ -1360,9 +1423,36 @@ class TriageChainWindow(QMainWindow):
         # Cellebrite Physical Analyzer'daki genel arama kutusundan esinlenildi
         # -- TEK bir kutu, asagidaki DORT tabloyu (Hayabusa/YARA/Chainsaw/capa)
         # birden AYNI ANDA filtreler (bkz. _on_findings_search_changed).
+        search_row = QHBoxLayout()
         self.findings_search = Input("Bulgularda ara (kural adı, dosya, MITRE etiketi)…")
         self.findings_search.textChanged.connect(self._on_findings_search_changed)
-        layout.addWidget(self.findings_search)
+        search_row.addWidget(self.findings_search, stretch=1)
+        # Oxygen Forensic Detective'in tablo disa aktarma ozelliginden
+        # esinlenildi -- ekranda GORUNEN (arama filtresinden GECEN) satirlari
+        # tek bir CSV'de birlestirir (bkz. _on_export_findings_csv).
+        export_findings_btn = SecondaryButton("CSV'ye Aktar")
+        export_findings_btn.clicked.connect(self._on_export_findings_csv)
+        search_row.addWidget(export_findings_btn)
+        layout.addLayout(search_row)
+
+        # İşaretlenenler ozeti -- Cellebrite'in "Tags" inceleme ekranindan
+        # esinlenildi: dort tabloya dagilmis isaretleri TEK bir listede
+        # gosterir (bkz. _collect_tagged_items/_refresh_tagged_summary).
+        self.tagged_panel = Card("İşaretlenenler")
+        tagged_table = QTableWidget(0, 4)
+        tagged_table.setHorizontalHeaderLabels(["KAYNAK", "BULGU/KURAL", "DOSYA", "NOT"])
+        _style_ledger_table(tagged_table)
+        tagged_header = tagged_table.horizontalHeader()
+        tagged_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        tagged_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        tagged_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        tagged_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.tagged_table = tagged_table
+        self.tagged_panel.body.addWidget(tagged_table)
+        self.tagged_empty_note = QLabel("Henüz işaretlenen bir bulgu yok.")
+        self.tagged_empty_note.setStyleSheet(f"color:{t.TEXT_SECONDARY}; font-size:{t.SIZE_BODY}px;")
+        self.tagged_panel.body.addWidget(self.tagged_empty_note)
+        layout.addWidget(self.tagged_panel)
 
         panel = Card()
         table = QTableWidget(0, 5)
@@ -1598,6 +1688,92 @@ class TriageChainWindow(QMainWindow):
             for row, record in enumerate(records):
                 table.setRowHidden(row, not matcher(record, query))
 
+    def _collect_tagged_items(self) -> list[tuple[str, object]]:
+        """Dort kaynaktan (Hayabusa/Chainsaw/YARA/capa) hangi kayitlarin
+        isaretlendigini toplar -- (motor_adi, kayit) ciftleri olarak.
+        `tags.json` sadece target_id+not tasir, kaydin kendisini (kural adi,
+        dosya vb.) TASIMAZ -- bu yuzden asil veriyi (self.snapshot) tekrar
+        tarayip her kaydin target_id'sini hesaplayip `self._tags`'te arariz."""
+        snap = self.snapshot
+        items: list[tuple[str, object]] = []
+        for engine, records, id_fn in (
+            ("Hayabusa", snap.findings, tag_store.target_id_for_finding),
+            ("Chainsaw", snap.chainsaw_findings, tag_store.target_id_for_finding),
+            ("YARA", snap.yara_matches, tag_store.target_id_for_yara_match),
+            ("capa", snap.capa_matches, tag_store.target_id_for_yara_match),
+        ):
+            for record in records:
+                if id_fn(record) in self._tags:
+                    items.append((engine, record))
+        return items
+
+    def _refresh_tagged_summary(self) -> None:
+        items = self._collect_tagged_items()
+        self.tagged_table.setRowCount(len(items))
+        for row, (engine, record) in enumerate(items):
+            target_id = (
+                tag_store.target_id_for_finding(record)
+                if hasattr(record, "rule_title")
+                else tag_store.target_id_for_yara_match(record)
+            )
+            self.tagged_table.setItem(row, 0, QTableWidgetItem(engine))
+            name = getattr(record, "rule_title", None) or getattr(record, "rule_name", "")
+            self.tagged_table.setItem(row, 1, QTableWidgetItem(name))
+            source_label = MonoLabel(record.source_path)
+            source_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+            self.tagged_table.setCellWidget(row, 2, source_label)
+            note = self._tags[target_id].note if target_id in self._tags else ""
+            self.tagged_table.setItem(row, 3, QTableWidgetItem(note or "—"))
+        self.tagged_table.resizeRowsToContents()
+        has_tags = bool(items)
+        self.tagged_table.setVisible(has_tags)
+        self.tagged_empty_note.setVisible(not has_tags)
+
+    def _on_export_findings_csv(self) -> None:
+        """Bulgular sayfasindaki DORT tabloda EKRANDA GORUNEN (arama
+        filtresinden gecen) satirlari TEK bir CSV'de birlestirir -- Oxygen
+        Forensic Detective'in tablo disa aktarma ozelliginden esinlenildi."""
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Bulguları CSV'ye Aktar", "bulgular.csv", "CSV (*.csv)"
+        )
+        if not path:
+            return
+        rows: list[list[str]] = []
+        for engine, table, records, id_fn in (
+            ("Hayabusa", self.findings_table, self.snapshot.findings, tag_store.target_id_for_finding),
+            ("Chainsaw", self.chainsaw_table, self.snapshot.chainsaw_findings, tag_store.target_id_for_finding),
+        ):
+            for row, finding in enumerate(records):
+                if table.isRowHidden(row):
+                    continue
+                target_id = id_fn(finding)
+                note = self._tags[target_id].note if target_id in self._tags else ""
+                rows.append([
+                    engine, finding.rule_title, finding.level, finding.timestamp,
+                    finding.source_path, finding.computer, finding.channel,
+                    finding.event_id, finding.mitre_tags, note,
+                ])
+        for engine, table, records, id_fn in (
+            ("YARA", self.yara_table, self.snapshot.yara_matches, tag_store.target_id_for_yara_match),
+            ("capa", self.capa_table, self.snapshot.capa_matches, tag_store.target_id_for_yara_match),
+        ):
+            for row, match in enumerate(records):
+                if table.isRowHidden(row):
+                    continue
+                target_id = id_fn(match)
+                note = self._tags[target_id].note if target_id in self._tags else ""
+                rows.append([
+                    engine, match.rule_name, "", "", match.source_path, "", "", "",
+                    match.tags, note,
+                ])
+        csv_export.write_rows_csv(
+            Path(path),
+            ["KAYNAK", "BULGU/KURAL", "SEVİYE", "OLAY ZAMANI", "DOSYA", "BİLGİSAYAR",
+             "KANAL", "OLAY ID", "ETİKET/MITRE", "İŞARET NOTU"],
+            rows,
+        )
+        self._set_status(f"{len(rows)} bulgu CSV'ye aktarıldı: {path}")
+
     def _refresh_findings(self) -> None:
         snap = self.snapshot
         if self.config is None:
@@ -1607,6 +1783,7 @@ class TriageChainWindow(QMainWindow):
                 f"{self.config.case.case_id} · {len(snap.findings)} bulgu"
             )
 
+        self._refresh_tagged_summary()
         self.findings_table.setRowCount(len(snap.findings))
         for row, finding in enumerate(snap.findings):
             is_severe = finding.level.lower() in ("high", "critical")
@@ -1770,6 +1947,13 @@ class TriageChainWindow(QMainWindow):
         )
         head.addWidget(title)
         head.addStretch()
+        # Oxygen Forensic Detective'in PDF disa aktarma ozelliginden esinlenildi
+        # -- report.json/report.html'in YERINE gecmez, kisa bir ozetini PDF'e
+        # yazar (bkz. gui_qt/pdf_export.py, _on_export_report_pdf).
+        self.export_pdf_button = SecondaryButton("PDF'e Aktar")
+        self.export_pdf_button.clicked.connect(self._on_export_report_pdf)
+        head.addWidget(self.export_pdf_button, alignment=Qt.AlignmentFlag.AlignVCenter)
+        head.addSpacing(10)
         self.report_chain_badge = StatusBadge()
         head.addWidget(self.report_chain_badge, alignment=Qt.AlignmentFlag.AlignVCenter)
         layout.addLayout(head)
@@ -1864,6 +2048,7 @@ class TriageChainWindow(QMainWindow):
         self.reports_tabs.setVisible(has_report)
         self.reports_card.setVisible(has_report)
         self.reports_empty_note.setVisible(not has_report)
+        self.export_pdf_button.setEnabled(has_report)
 
         if self.config is None:
             self.reports_subtitle.setText("Henüz bir vaka yüklenmedi.")
@@ -1933,6 +2118,26 @@ class TriageChainWindow(QMainWindow):
             self.report_chain_badge.set_status(t.SUCCESS, f"Zincir Geçerli · {cs.total_events} olay")
         else:
             self.report_chain_badge.set_status(t.ERROR, f"Zincir GEÇERSİZ · {cs.message}")
+
+    def _on_export_report_pdf(self) -> None:
+        """report.json/report.html'in YERINE gecmeyen, kisa bir PDF ozeti
+        uretir -- bkz. gui_qt/pdf_export.py modul basi notu."""
+        report = self.snapshot.report
+        if report is None:
+            return
+        default_name = f"{report.case_id}_rapor_ozeti.pdf"
+        path, _filter = QFileDialog.getSaveFileName(
+            self, "Raporu PDF'e Aktar", default_name, "PDF (*.pdf)"
+        )
+        if not path:
+            return
+        summary = build_executive_summary(report)
+        try:
+            pdf_export.export_report_pdf(Path(path), report, summary)
+        except OSError as exc:
+            self._set_status(f"PDF yazılamadı: {exc}", error=True)
+            return
+        self._set_status(f"Rapor özeti PDF'e aktarıldı: {path}")
 
     # -- Vakalar --------------------------------------------------------------
     def _build_cases_page(self) -> QWidget:
@@ -2128,6 +2333,39 @@ class TriageChainWindow(QMainWindow):
             metrics.addWidget(card_tuple[0])
         layout.addLayout(metrics)
 
+        # Vaka notu -- Oxygen Forensic Detective'in vaka notlari fikrinden
+        # esinlenildi (bkz. gui_qt/case_note_store.py, docs/aldigim_kararlar.md).
+        # Bulgu isaretlerinin (Tags) AKSINE tek bir bulguya degil VAKANIN
+        # GENELINE ait -- serbest bir hipotez/gozlem/takip-listesi alani.
+        notes_panel = Card("Vaka Notları")
+        self.case_note_edit = QPlainTextEdit()
+        self.case_note_edit.setPlaceholderText(
+            "Genel gözlemler, hipotezler, takip edilecekler…"
+        )
+        self.case_note_edit.setFixedHeight(90)
+        self.case_note_edit.setStyleSheet(f"""
+            QPlainTextEdit {{
+                background-color: {t.BG_LAYER2};
+                color: {t.TEXT_MAIN};
+                border: 1px solid {t.BORDER};
+                border-radius: {t.RADIUS_SM}px;
+                padding: 8px 10px;
+                font-family: "{t.FONT_UI}";
+                font-size: {t.SIZE_BODY}px;
+            }}
+        """)
+        notes_panel.body.addWidget(self.case_note_edit)
+        notes_footer = QHBoxLayout()
+        self.case_note_status = QLabel("")
+        self.case_note_status.setStyleSheet(f"color:{t.TEXT_SECONDARY}; font-size:{t.SIZE_HELPER}px;")
+        notes_footer.addWidget(self.case_note_status)
+        notes_footer.addStretch()
+        self.case_note_save_btn = SecondaryButton("Kaydet")
+        self.case_note_save_btn.clicked.connect(self._on_save_case_note)
+        notes_footer.addWidget(self.case_note_save_btn)
+        notes_panel.body.addLayout(notes_footer)
+        layout.addWidget(notes_panel)
+
         # Defter tablosu
         panel = Card("Delil Zinciri Defteri")
         note = QLabel(
@@ -2143,6 +2381,44 @@ class TriageChainWindow(QMainWindow):
         panel.body.addWidget(self.table_footer)
         layout.addWidget(panel, stretch=1)
         return page
+
+    def _refresh_case_note(self) -> None:
+        """Vaka notunu diskten yukler -- ama SADECE FARKLI bir vakaya
+        gecildiginde (bkz. __init__'teki _case_note_loaded_for notu):
+        aksi halde bir aksiyon bitip _refresh() tetiklendiginde kullanicinin
+        o an yazmakta oldugu kaydedilmemis metin sessizce KAYBOLURDU."""
+        if self.config is None:
+            self.case_note_edit.setPlainText("")
+            self.case_note_edit.setEnabled(False)
+            self.case_note_save_btn.setEnabled(False)
+            self.case_note_status.setText("")
+            self._case_note_loaded_for = None
+            return
+
+        self.case_note_edit.setEnabled(True)
+        self.case_note_save_btn.setEnabled(True)
+        case_id = self.config.case.case_id
+        if case_id == self._case_note_loaded_for:
+            return
+        note = case_note_store.load_case_note(self._case_note_path)
+        self.case_note_edit.setPlainText(note.text if note else "")
+        self._set_case_note_status(note)
+        self._case_note_loaded_for = case_id
+
+    def _set_case_note_status(self, note: Optional[case_note_store.CaseNote]) -> None:
+        if note is None:
+            self.case_note_status.setText("Henüz kaydedilmedi.")
+            return
+        stamp = note.updated_at_utc[:19].replace("T", " ")
+        self.case_note_status.setText(f"Son kayıt: {note.updated_by} · {stamp}")
+
+    def _on_save_case_note(self) -> None:
+        if self._case_note_path is None or self.config is None:
+            return
+        text = self.case_note_edit.toPlainText()
+        note = case_note_store.save_case_note(self._case_note_path, text, self.config.case.operator)
+        self._set_case_note_status(note)
+        self._set_status("Vaka notu kaydedildi.")
 
     def _metric_card(self, label_text: str, icon_name: str, warning: bool = False) -> tuple:
         """Bir metrik karti kurar; (kart, deger etiketi) dondurur.
@@ -2348,9 +2624,11 @@ class TriageChainWindow(QMainWindow):
         if self.config is not None:
             self._tags_path = resolve_tags_path(self.config)
             self._tags = tag_store.load_tags(self._tags_path)
+            self._case_note_path = resolve_case_note_path(self.config)
         else:
             self._tags_path = None
             self._tags = {}
+            self._case_note_path = None
         self._set_buttons_enabled(True)
         self._refresh_header()
         self._refresh_metrics()
@@ -2361,6 +2639,7 @@ class TriageChainWindow(QMainWindow):
         self._refresh_reports()
         self._refresh_cases()
         self._refresh_timeline()
+        self._refresh_case_note()
         if self.snapshot.warning:
             self._set_status(self.snapshot.warning, error=True)
 
