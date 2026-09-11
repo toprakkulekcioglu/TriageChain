@@ -2343,3 +2343,81 @@ sözdizimi doğrulandı, SONRA `pytest` ile üç iterasyonda (yukarıdaki üç
 regresyon sırayla bulunup düzeltildi) TAM 314/314 yeşile ulaşıldı --
 birleştirmeden ÖNCEKİ toplam testle (314) birebir aynı sayı, hiçbir test
 sessizce kaybolmadı/atlanmadı. Orijinal 33 dosya `git rm` ile silindi.
+
+---
+
+## ES/DE/PT/FR çevirileri tamamlandı + gerçek bir i18n regresyonu bulundu
+
+**Karar:** Kullanıcının "çevirileri de ekle her dil için ayrıca" isteği
+üzerine `i18n.py`'deki `STRINGS` tablosuna ES/DE/PT/FR eklendi.
+**Kapsam bilinçli olarak SINIRLI tutuldu**: bu tablo SADECE pencere
+başlığı + kenar çubuğu + Ayarlar sayfasını kapsıyor (bkz. modülün kendi
+dokstring'i) -- diğer yedi sayfanın (Dashboard, Bulgular vb.) kendi
+içeriği main_window.py'de doğrudan Türkçe metin olarak duruyor ve BU
+TURDA dokunulmadı; bu, çok daha büyük, ayrı bir aşama olarak kasıtlı
+şekilde ertelendi (daha önce de "ayrı bir araştırma aşaması" olarak not
+edilmişti).
+
+**Terminoloji:** "Chain of Custody" gibi adli bilişim/hukuk terimleri
+için her dilin kendi literatüründe YERLEŞİK karşılıklar kullanıldı,
+uydurma çeviri değil: DE "Beweismittelkette", ES "Cadena de Custodia",
+PT "Cadeia de Custódia", FR "Chaîne de Possession" (Fransızca'da
+"chaîne de custody" gibi İngilizce'den bozma bir kalıp YAYGIN DEĞİL,
+Frankofon adli bilişim kaynaklarında "chaîne de possession" kullanılıyor).
+
+**Doğrulama sırasında bulunan gerçek regresyon:** Yeni dilleri görsel
+olarak doğrulamak için `QWidget.grab()` ile ES/DE/PT/FR Ayarlar sayfası
+ekran görüntüleri alındı (gerçek pencere kurulup dil değiştirilerek).
+Almanca ekran görüntüsünde kenar çubuğundaki "AKTİF VAKA" kutusunun ÜST
+satırı doğru çevrilmişken ("AKTIVER FALL"), ALT satırı ("Vaka yüklenmedi"
+-- vaka yokken gösterilen metin) Türkçe KALDIĞI görüldü. Kök neden:
+`main_window.py::_refresh_header()`, `case_pill` widget'ını (ki
+sidebar'da olduğu için i18n KAPSAMINDA, ilk kurulumda `i18n.t(
+"sidebar_no_case")` ile doğru kuruluyor) `_refresh()` her çağrıldığında
+SABİT `"Vaka yüklenmedi"` string'iyle EZİYORDU -- ilk kurulumdaki çeviri
+bir sonraki tazelemede kayboluyordu. `i18n.t("sidebar_no_case")` ile
+düzeltildi (SADECE bu satır -- aynı fonksiyondaki `case_subtitle`/
+`chain_badge`/`load_button` BİLEREK dokunulmadı, onlar Dashboard SAYFA
+İÇERİĞİ, i18n kapsamı dışında).
+
+**Doğrulama:** `test_i18n.py` bölümündeki üç test güncellendi
+(`test_es_de_pt_fr_henuz_cevrilmedi` → `test_tum_alti_dil_gercekten_
+cevrili` + gerçek metin dogrulamasi yapan yeni bir test; EN'e düşme
+mantığı artık `monkeypatch` ile test ediliyor çünkü gerçek bir
+çevrilmemiş dil kalmadı; tüm dillerin AYNI anahtar kümesine sahip olduğunu
+doğrulayan bir test eklendi). `test_gui_qt.py` bölümündeki dil açılır
+listesi testi "çevrilmedi" notunun ARTIK hiçbir dilde çıkmadığını
+doğrulayacak şekilde güncellendi. `case_pill` regresyonu için ayrı bir
+test eklendi. Toplam 315 test, hepsi yeşil.
+
+---
+
+## Ekran ölçeği (DPI) yuvarlama düzeltmesi -- native kapat düğmesi şikayeti
+
+**Karar:** Kullanıcı gerçek makinesinde pencerenin sağ üst köşesindeki
+native (Windows) kapat düğmesinin bir kısmının ekran dışında kaldığını
+bildirdi. Kod tabanında herhangi bir OZEL baslik cubugu/kapat dugmesi
+widget'i YOK (grep ile dogrulandi) -- bu OS'un kendi pencere cercevesi,
+TriageChain'in cizmedigi bir sey. En olasi kok neden: `app.py`'de hicbir
+DPI-farkindalik ayari YOKTU; kesirli ekran olcegi (%125/%150 gibi tam
+sayi olmayan carpanlar) kullanan monitorlerde Qt'nin VARSAYILAN yuvarlama
+politikasi widget'in dusundugu boyutla Windows'un GERCEKTE cizdigi boyut
+arasinda bir uyusmazlik yaratabiliyor -- bu da
+pencere cercevesinin (kapat dugmesi dahil) ekranin gercek sinirina gore
+kaymis/tasmis GORUNMESINE yol acan, Qt+PyInstaller'da bilinen bir desen.
+
+**Uygulanan duzeltme:** `app.py`'ye, `QApplication` kurulmadan HEMEN
+once, `QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.
+HighDpiScaleFactorRoundingPolicy.PassThrough)` eklendi -- Qt'ye olcegi
+YUVARLAMADAN oldugu gibi kullanmasini soyleyip bu uyusmazligi ortadan
+kaldirir.
+
+**DOGRULANMADI -- bilerek acikca belirtiliyor:** Bu, offscreen test
+ortaminin (QT_QPA_PLATFORM=offscreen, tum bu projenin testlerinin
+kosulma bicimi) HICBIR ZAMAN uretmedigi gercek bir native pencere
+cercevesi/OS-seviyesi geometri sorunu -- `QWidget.grab()` widget
+ICERIGINI yakalar, OS'un cizdigi baslik cubugunu/kapat dugmesini
+YAKALAMAZ. Bu yuzden bu duzeltmenin GERCEKTEN sorunu cozdugu, kullanicinin
+kendi ekraninda (ozellikle kesirli olcek kullaniyorsa) elle test edilmeden
+KANITLANAMAZ -- dusuk riskli, standart, yaygin olarak onerilen bir
+duzeltme oldugu icin uygulandi ama "cozuldu" olarak ISARETLENMEDI.

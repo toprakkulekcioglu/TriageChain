@@ -308,11 +308,13 @@ kullanmak için KAPE kurulumu ya da lisansı gerekmiyor.
   disiplinle kurulmuş olmasıyla tutarlı.
 - **Çok dil altyapısı** (`gui_qt/i18n.py`): Ayarlar sayfasında TR/EN/ES/
   DE/PT/FR seçenekleri var ("`<KOD> <yerel ad>`" biçiminde, örn.
-  "EN English"); şu an TR + EN TAM çevrili, diğer dördü seçilebilir ama
-  henüz çevrilmedi (seçilirse arayüz İngilizce'ye düşer, sayfa bunu açıkça
-  belirtir). Kapsam bilerek dar: şu an sadece pencere başlığı + Ayarlar
-  sayfasının kendi metni dile göre değişiyor, diğer yedi sayfanın içeriği
-  henüz çevrilmedi (ayrı, daha büyük bir aşama olarak planlandı).
+  "EN English"); ALTI dilin hepsi TAM çevrili -- adli bilişim/hukuk
+  terimleri (örn. "Chain of Custody") her dilin kendi literatüründeki
+  yerleşik karşılığıyla (DE "Beweismittelkette", ES "Cadena de Custodia",
+  PT "Cadeia de Custódia", FR "Chaîne de Possession"). Kapsam bilerek
+  dar: şu an sadece pencere başlığı + kenar çubuğu + Ayarlar sayfasının
+  kendi metni dile göre değişiyor, diğer yedi sayfanın içeriği henüz
+  çevrilmedi (ayrı, daha büyük bir aşama olarak planlandı).
 - **"Yeni Vaka Oluştur" sihirbazı** (`gui_qt/case_wizard.py::NewCaseDialog`):
   KAPE'nin kendi GUI'sindeki "target source"/"target destination"
   deneyimini taklit ediyor — kullanıcı vaka bilgisini yazıp kaynağı (canlı

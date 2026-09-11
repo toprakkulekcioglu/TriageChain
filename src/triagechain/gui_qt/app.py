@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sys
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QApplication
 
 from triagechain.gui_qt import icons, theme
@@ -12,6 +14,17 @@ from triagechain.gui_qt.main_window import TriageChainWindow
 
 def main() -> int:
     """QApplication'i kurar, gomulu fontlari yukler, taban QSS'i uygular ve pencereyi acar."""
+    # QApplication'dan ONCE ayarlanmali. Kesirli ekran olcegi (%125/%150 gibi
+    # tam sayi olmayan carpanlar) kullanan monitorlerde Qt'nin VARSAYILAN
+    # yuvarlama politikasi, widget'in DUSUNDUGU boyutla Windows'un GERCEKTE
+    # cizdigi boyut arasinda kucuk bir fark yaratabiliyor -- bu da pencere
+    # cercevesinin (baslik cubugu + native kapat dugmesi dahil) ekranin
+    # gercek sinirina gore hafifce kaymis/tasmis gorunmesine yol aciyor.
+    # PassThrough, Qt'ye olcegi YUVARLAMADAN oldugu gibi kullanmasini
+    # soyleyip bu uyusmazligi ortadan kaldirir (bkz. Qt belgeleri).
+    QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("TriageChain")
     # Windows'ta varsayilan "windowsvista"/"windows11" native stili, agir

@@ -46,3 +46,12 @@
   bilgisi + boş "İnceleyen / İmza / Tarih" satırları eklendi, rapor
   yazdırılıp elle imzalanarak resmi bir gözetim zinciri belgesine
   dönüşebiliyor
+- Tüm pytest testleri `tests/test_all.py` tek dosyasında birleştirildi
+- ES/DE/PT/FR pencere-çerçevesi çevirileri tamamlandı (altı dilin hepsi
+  artık pencere başlığı/kenar çubuğu/Ayarlar sayfası için tam çevrili,
+  adli bilişim terimleri literatürdeki yerleşik karşılıklarıyla); bu
+  sırada bulunan bir i18n regresyonu (kenar çubuğundaki "vaka yüklenmedi"
+  etiketi dil değişince Türkçe'de takılı kalıyordu) düzeltildi
+- Kesirli ekran ölçeği (DPI) yuvarlama politikası düzeltmesi eklendi
+  (native pencere kapat düğmesinin ekran dışında kalması şikayetine
+  karşı — kullanıcının kendi ekranında henüz doğrulanmadı)

@@ -2740,7 +2740,11 @@ class TriageChainWindow(QMainWindow):
 
     def _refresh_header(self) -> None:
         if self.config is None:
-            self.case_pill.setText("Vaka yüklenmedi")
+            # case_pill KENAR CUBUGUNDA -- i18n kapsaminda (bkz. i18n.py),
+            # bu yuzden sabit Turkce metin DEGIL, t() ile yeniden cizilmeli.
+            # Digerleri (subtitle/rozet/buton) Dashboard SAYFA ICERIGI --
+            # kasitli olarak i18n kapsami DISINDA (bkz. i18n.py dokstring'i).
+            self.case_pill.setText(i18n.t("sidebar_no_case"))
             self.case_subtitle.setText("Henüz bir vaka yüklenmedi.")
             self.chain_badge.set_status(t.TEXT_SECONDARY, "Henüz vaka yüklenmedi")
             self.operator_avatar.setText("—")

@@ -218,6 +218,38 @@
   kendi sayfasında kalıyor (`page-break-after: always`). 2 yeni test
   (toplam 314).
 
+- **Tüm pytest testleri tek dosyada birleştirildi** — kullanıcının isteği
+  üzerine `tests/unit/` (26 dosya) + `tests/integration/` (7 dosya) tek bir
+  `tests/test_all.py`'de toplandı; yeni bir test eklenecekse bu dosyanın
+  sonuna eklenir. Detaylar `aldigim_kararlar.md`'de. Toplam 314 test
+  (birleştirmeden önceki sayıyla birebir aynı).
+
+- **ES/DE/PT/FR pencere-çerçevesi çevirileri tamamlandı** —
+  `i18n.py`'deki pencere başlığı/kenar çubuğu/Ayarlar sayfası tablosu artık
+  ALTI dilin (TR/EN/ES/DE/PT/FR) hepsinde dolu; adli bilişim literatüründe
+  yerleşik terimler kullanıldı ("Chain of Custody" → DE
+  "Beweismittelkette", ES "Cadena de Custodia", PT "Cadeia de Custódia",
+  FR "Chaîne de Possession" — uydurma değil, her dilin kendi
+  literatüründeki karşılık). Bu sırada gerçek bir regresyon bulundu:
+  kenar çubuğundaki "Vaka yüklenmedi" etiketi i18n kapsamında olduğu halde
+  `_refresh_header()` sabit Türkçe metin yazıyordu, dil değiştirilince TEK
+  BAŞINA Türkçe kalıyordu (ES/DE/PT/FR ekran görüntüleriyle bulundu,
+  `i18n.t("sidebar_no_case")` ile düzeltildi). **Kapsam DIŞI hâlâ**: diğer
+  7 sayfanın (Dashboard, Bulgular vb.) kendi içeriği — ayrı, daha büyük bir
+  aşama. 1 yeni test (toplam 315).
+
+- **Ekran ölçeği (DPI) yuvarlama düzeltmesi** — kullanıcı gerçek makinesinde
+  pencerenin sağ üst köşesindeki native kapat düğmesinin kesildiğini/ekran
+  dışında kaldığını bildirdi. Kesirli ekran ölçeği (%125/%150 gibi tam
+  sayı olmayan çarpanlar) kullanan monitörlerde Qt'nin varsayılan yuvarlama
+  politikasının widget boyutu ile Windows'un gerçekte çizdiği boyut
+  arasında uyuşmazlık yaratabildiği bilinen bir Qt+PyInstaller deseni;
+  `app.py`'ye `QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+  PassThrough)` eklendi (QApplication kurulmadan önce). **Doğrulanmadı**:
+  bu, native pencere çerçevesinin (offscreen test ortamının hiç
+  üretemediği) gerçek bir OS-seviyesi geometri sorunu — kullanıcının
+  gerçek ekranında elle test edilmesi gerekiyor.
+
 ## Sırada
 
 0. **Şu an sırada (kullanıcının onayladığı sıra):**

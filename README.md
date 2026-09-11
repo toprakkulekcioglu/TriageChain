@@ -103,7 +103,9 @@ hem tam işlevli bir masaüstü uygulamasından (`triagechain-gui`) kullanılabi
   arşivleri otomatik çıkartılır (arka planda, arayüz donmadan); bir arşivde
   birden fazla makine varsa hepsi tek seferde ayrı vaka olarak oluşturulabilir.
 - **Açık/koyu tema + çok dil desteği** — Ayarlar sayfasında anında geçiş.
-  Şu an TR + EN tam çevrili; ES/DE/PT/FR seçilebilir ama henüz çevrilmedi.
+  Altı dilin (TR/EN/ES/DE/PT/FR) hepsi pencere başlığı + kenar çubuğu +
+  Ayarlar sayfası için tam çevrili; diğer yedi sayfanın kendi içeriği
+  (Dashboard, Bulgular vb.) henüz çevrilmedi.
 
 Henüz yok: dış sistem adaptörleri (`integrations/`), Plaso entegrasyonu
 (bilerek ertelendi — bkz. `docs/roadmap.md`).

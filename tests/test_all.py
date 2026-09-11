@@ -2918,6 +2918,22 @@ def test_dil_secimi_sidebar_etiketlerini_de_degistiriyor(gui_qt_qt_app):
     assert window.stack.currentIndex() == 3
 
 
+def test_kenar_cubugu_vaka_yuklenmedi_etiketi_dile_gore_degisir(gui_qt_qt_app):
+    """Regresyon: case_pill (kenar cubugundaki 'AKTIF VAKA' kutusu) i18n
+    kapsaminda oldugu halde _refresh_header() sabit Turkce metin
+    yaziyordu ('Vaka yüklenmedi') -- dil degistirilince bu etiket TEK
+    BASINA Turkce kalip diger sekmeyi yalanliyordu (ES/DE/PT/FR ekran
+    goruntuleriyle bulundu). i18n.t('sidebar_no_case') kullanilarak
+    duzeltildi."""
+    window = TriageChainWindow()
+    i18n.set_language("de")
+    window._build_shell()
+    window._refresh()
+
+    assert window.case_pill.text() == i18n.t("sidebar_no_case")
+    assert window.case_pill.text() == "Kein Fall geladen"
+
+
 def test_dil_acilir_listesi_kod_ve_ad_formatinda_ve_dogru_sirada(gui_qt_qt_app):
     window = TriageChainWindow()
     window._show_settings()
@@ -2926,14 +2942,15 @@ def test_dil_acilir_listesi_kod_ve_ad_formatinda_ve_dogru_sirada(gui_qt_qt_app):
 
     assert labels[0] == "TR Türkçe"
     assert labels[1] == "EN English"
-    assert labels[2].startswith("ES Español")
-    assert labels[3].startswith("DE Deutsch")
-    assert labels[4].startswith("PT Português")
-    assert labels[5].startswith("FR Français")
-    # Henuz cevrilmemis diller acikca isaretlenmeli, sessizce eksik
-    # gosterilmemeli (kullaniciyi yanlis bilgilendirmemek icin).
-    for label in labels[2:]:
-        assert "çevrilmedi" in label
+    assert labels[2] == "ES Español"
+    assert labels[3] == "DE Deutsch"
+    assert labels[4] == "PT Português"
+    assert labels[5] == "FR Français"
+    # Alti dilin hepsi cevrildi (bkz. i18n.py) -- hicbir etikette artik
+    # "cevrilmedi" uyarisi OLMAMALI (kullaniciyi yanlis bilgilendirmemek
+    # icin bu notun sadece GERCEKTEN eksik bir dilde cikmasi gerekir).
+    for label in labels:
+        assert "çevrilmedi" not in label
 
 
 def test_tema_gecisi_dashboard_sayfasina_da_yansiyor(gui_qt_qt_app, gui_qt_config_path):
@@ -3234,17 +3251,38 @@ def test_set_language_gecersiz_kod_turkceye_duser():
     assert i18n.get_language() == "tr"
 
 
-def test_tr_ve_en_gercekten_cevrili():
-    assert i18n.is_translated("tr")
-    assert i18n.is_translated("en")
+def test_tum_alti_dil_gercekten_cevrili():
+    for code in ("tr", "en", "es", "de", "pt", "fr"):
+        assert i18n.is_translated(code)
 
 
-def test_es_de_pt_fr_henuz_cevrilmedi():
-    for code in ("es", "de", "pt", "fr"):
-        assert not i18n.is_translated(code)
+def test_es_de_pt_fr_dogru_metinleri_donduruyor():
+    """Her yeni dilin STRINGS tablosundan GERCEKTEN kendi metnini
+    dondurdugunu (Ingilizce'ye sessizce dusmedigini) dogrular -- adli
+    bilisim literaturunde yerlesik terimler (orn. 'chain of custody')
+    kullanildi, bkz. i18n.py modul dokstring'i."""
+    i18n.set_language("es")
+    assert i18n.t("window_title") == "Consola TriageChain"
+    assert i18n.t("nav_custody") == "Cadena de Custodia"
+
+    i18n.set_language("de")
+    assert i18n.t("window_title") == "TriageChain-Konsole"
+    assert i18n.t("nav_custody") == "Beweismittelkette"
+
+    i18n.set_language("pt")
+    assert i18n.t("window_title") == "Console TriageChain"
+    assert i18n.t("nav_custody") == "Cadeia de Custódia"
+
+    i18n.set_language("fr")
+    assert i18n.t("window_title") == "Console TriageChain"
+    assert i18n.t("nav_custody") == "Chaîne de Possession"
 
 
-def test_cevrilmemis_dil_secilince_t_ingilizceye_duser():
+def test_cevrilmemis_dil_secilince_t_ingilizceye_duser(monkeypatch):
+    """t()'nin savunma amacli EN-dusme mantigi -- su an TUM desteklenen
+    diller cevrili oldugu icin gercek bir dil ile tetiklenemiyor, bu yuzden
+    _TRANSLATED_LANGUAGES'dan gecici olarak cikarilarak dogrulaniyor."""
+    monkeypatch.setattr(i18n, "_TRANSLATED_LANGUAGES", {"tr", "en"})
     i18n.set_language("de")
 
     # get_language() KULLANICININ SECTIGI ham kodu doner (Ayarlar
@@ -3258,10 +3296,13 @@ def test_bilinmeyen_anahtar_kendisini_doner_asla_patlamaz():
     assert i18n.t("hic_boyle_bir_anahtar_yok") == "hic_boyle_bir_anahtar_yok"
 
 
-def test_tr_ve_en_ayni_anahtar_kumesine_sahip():
+def test_tum_diller_ayni_anahtar_kumesine_sahip():
+    """Bir ceviri tablosunda unutulan/fazladan bir anahtar olursa (orn.
+    yeni bir i18n.t() cagrisi eklenip sadece TR/EN'e yazilirsa) bu test
+    hemen yakalar."""
     tr_keys = set(i18n.STRINGS["tr"].keys())
-    en_keys = set(i18n.STRINGS["en"].keys())
-    assert tr_keys == en_keys
+    for code in ("en", "es", "de", "pt", "fr"):
+        assert set(i18n.STRINGS[code].keys()) == tr_keys, code
 
 
 # ============================================================================
